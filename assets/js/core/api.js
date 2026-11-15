@@ -207,6 +207,19 @@ const KSI = (() => {
 
   /** Marks inputs carrying data-field="<name>" inside container with the API's field errors. */
   /** Marks each field's message on the form; returns the messages that have no field to sit next to. */
+  /** Readable names for fields whose error has no box to show under. */
+  const FIELD_NAMES = {
+    va_right: 'Vision right', va_left: 'Vision left', iop_right: 'Pressure right (IOP)', iop_left: 'Pressure left (IOP)',
+    bp_systolic: 'Blood pressure (upper number)', bp_diastolic: 'Blood pressure (lower number)', blood_sugar: 'Blood sugar',
+    pain_score: 'Pain score', icd10_code_id: 'Diagnosis', row_version: 'Record version',
+  };
+
+  function fieldName(name) {
+    if (FIELD_NAMES[name]) return FIELD_NAMES[name];
+    const words = String(name).replace(/\.\d+\./g, ' ').replace(/[._]+/g, ' ').trim();
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  }
+
   function showFieldErrors(container, fields) {
     clearFieldErrors(container);
     let first = null;
@@ -214,7 +227,8 @@ const KSI = (() => {
     Object.entries(fields || {}).forEach(([name, message]) => {
       const input = container.querySelector(`[data-field="${CSS.escape(name)}"]`);
       if (!input) {
-        unplaced.push(message);
+        // A bare "Must be between 0 and 80." says nothing on its own: name the field it belongs to.
+        unplaced.push(/^(Must be|This field is required|Invalid|Contains invalid|Select at)/.test(message) ? `${fieldName(name)}: ${message}` : message);
         return;
       }
       input.classList.add('is-invalid');

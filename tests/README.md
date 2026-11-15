@@ -29,6 +29,7 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `operation-templates-browser.mjs` | Intra-op notes and the first post-op review start from the template; the Settings editor |
 | `pharmacy-refill.mjs` | Paid refills: own order at today's price, pay first, hand over; old free refill closed |
 | `pharmacy-refill-browser.mjs` | The Refill window on screen |
+| `theatre-errors-browser.mjs` | Pre-op errors show under the right box; unplaced errors name their field |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

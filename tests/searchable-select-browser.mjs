@@ -37,7 +37,7 @@ await evaluate(`document.getElementById('st-req-item-pick')._ssDisplay.click()`)
 await waitUntil(`!!document.querySelector('.ss-panel .ss-search')`, 5000, 'item panel');
 await evaluate(`(() => { const s = document.querySelector('.ss-panel .ss-search'); s.value = '${run} Item 07'; s.dispatchEvent(new Event('input')); return true; })()`);
 await evaluate(`document.querySelector('.ss-panel .ss-option').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
-await sleep(200);
+await waitUntil(`document.getElementById('st-req-items').textContent.includes('${run} Item 07')`, 5000, 'item added').catch(() => {});
 check('choosing an item adds it to the requisition', await evaluate(`document.getElementById('st-req-items').textContent.includes('${run} Item 07')`));
 
 // A value set in code shows in the box.

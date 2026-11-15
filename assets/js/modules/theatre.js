@@ -580,22 +580,22 @@ function thRenderPreopPanel() {
     ${locked ? '<div class="cl-lock-note">This assessment can no longer be changed. Add an addendum instead.</div>' : ''}
 
     <div class="form-grid">
-      <div class="form-group"><label class="form-label">Vision right</label><input class="form-input" id="th-pre-va-r" maxlength="8" value="${KSI.esc(value(p.va_right))}" ${locked ? 'disabled' : ''}></div>
-      <div class="form-group"><label class="form-label">Vision left</label><input class="form-input" id="th-pre-va-l" maxlength="8" value="${KSI.esc(value(p.va_left))}" ${locked ? 'disabled' : ''}></div>
+      <div class="form-group"><label class="form-label">Vision right</label><input class="form-input" id="th-pre-va-r" data-field="va_right" maxlength="8" value="${KSI.esc(value(p.va_right))}" ${locked ? 'disabled' : ''}></div>
+      <div class="form-group"><label class="form-label">Vision left</label><input class="form-input" id="th-pre-va-l" data-field="va_left" maxlength="8" value="${KSI.esc(value(p.va_left))}" ${locked ? 'disabled' : ''}></div>
     </div>
     <div class="form-grid">
-      <div class="form-group"><label class="form-label">Pressure right (mmHg)</label><input type="number" class="form-input" id="th-pre-iop-r" value="${value(p.iop_right)}" ${locked ? 'disabled' : ''}></div>
-      <div class="form-group"><label class="form-label">Pressure left (mmHg)</label><input type="number" class="form-input" id="th-pre-iop-l" value="${value(p.iop_left)}" ${locked ? 'disabled' : ''}></div>
+      <div class="form-group"><label class="form-label">Pressure right (mmHg)</label><input type="number" class="form-input" id="th-pre-iop-r" data-field="iop_right" value="${value(p.iop_right)}" ${locked ? 'disabled' : ''}></div>
+      <div class="form-group"><label class="form-label">Pressure left (mmHg)</label><input type="number" class="form-input" id="th-pre-iop-l" data-field="iop_left" value="${value(p.iop_left)}" ${locked ? 'disabled' : ''}></div>
     </div>
     <div class="form-grid">
       <div class="form-group"><label class="form-label">Blood pressure</label>
         <div style="display:flex;gap:6px;align-items:center">
-          <input type="number" class="form-input" id="th-pre-bp-s" placeholder="120" value="${value(p.bp_systolic)}" ${locked ? 'disabled' : ''}>
+          <input type="number" class="form-input" id="th-pre-bp-s" data-field="bp_systolic" placeholder="120" value="${value(p.bp_systolic)}" ${locked ? 'disabled' : ''}>
           <span>/</span>
-          <input type="number" class="form-input" id="th-pre-bp-d" placeholder="80" value="${value(p.bp_diastolic)}" ${locked ? 'disabled' : ''}>
+          <input type="number" class="form-input" id="th-pre-bp-d" data-field="bp_diastolic" placeholder="80" value="${value(p.bp_diastolic)}" ${locked ? 'disabled' : ''}>
         </div>
       </div>
-      <div class="form-group"><label class="form-label">Blood sugar (mmol/L)</label><input type="number" step="0.1" class="form-input" id="th-pre-sugar" value="${value(p.blood_sugar)}" ${locked ? 'disabled' : ''}></div>
+      <div class="form-group"><label class="form-label">Blood sugar (mmol/L)</label><input type="number" step="0.1" class="form-input" id="th-pre-sugar" data-field="blood_sugar" value="${value(p.blood_sugar)}" ${locked ? 'disabled' : ''}></div>
     </div>
     <div class="form-grid">
       <div class="form-group" data-field="fasting_since"><label class="form-label">Fasting since</label>
@@ -608,9 +608,9 @@ function thRenderPreopPanel() {
         </select></div>
     </div>
     <div class="form-group"><label class="form-label">Findings</label>
-      <textarea class="form-input" rows="2" id="th-pre-findings" ${locked ? 'disabled' : ''}>${KSI.esc(value(p.findings))}</textarea></div>
+      <textarea class="form-input" rows="2" id="th-pre-findings" data-field="findings" ${locked ? 'disabled' : ''}>${KSI.esc(value(p.findings))}</textarea></div>
     <div class="form-group"><label class="form-label">Allergies</label>
-      <input class="form-input" id="th-pre-allergies" maxlength="200" value="${KSI.esc(value(p.allergies))}" placeholder="None known" ${locked ? 'disabled' : ''}></div>
+      <input class="form-input" id="th-pre-allergies" data-field="allergies" maxlength="200" value="${KSI.esc(value(p.allergies))}" placeholder="None known" ${locked ? 'disabled' : ''}></div>
 
     <div class="form-label" style="margin-top:12px">Before the patient goes through</div>
     <div class="check-row" data-field="checks.site_marked">
@@ -625,7 +625,7 @@ function thRenderPreopPanel() {
         <span class="finding-cb-label">The patient has consented to this operation</span></label>
     </div>
     <div class="form-group"><label class="form-label">Note for the surgeon</label>
-      <textarea class="form-input" rows="2" id="th-pre-note" ${locked ? 'disabled' : ''}>${KSI.esc(value(p.surgeon_note))}</textarea></div>
+      <textarea class="form-input" rows="2" id="th-pre-note" data-field="surgeon_note" ${locked ? 'disabled' : ''}>${KSI.esc(value(p.surgeon_note))}</textarea></div>
 
     ${p.addenda?.length ? `<div class="cl-addenda"><div class="form-label">Addenda</div>
       ${p.addenda.map(a => `<div class="cl-addendum"><div class="cl-addendum-head">${KSI.esc(a.reason)} — ${KSI.esc(a.created_by)} · ${KSI.fmtDateTime(a.created_at)}</div><div>${KSI.esc(a.note)}</div></div>`).join('')}</div>` : ''}
@@ -773,7 +773,7 @@ function thRenderOperationPanel() {
     <div class="form-label" style="margin-top:12px">Who was in theatre</div>
     <div class="form-grid">
       <div class="form-group"><label class="form-label">Surgeon <span class="required">*</span></label>
-        <select class="form-select" id="th-op-surgeon" ${locked ? 'disabled' : ''}>${staffOptions(TH.options.surgeons, teamRole('surgeon') || b.surgeon.id)}</select></div>
+        <select class="form-select" id="th-op-surgeon" data-field="surgeon_user_id" ${locked ? 'disabled' : ''}>${staffOptions(TH.options.surgeons, teamRole('surgeon') || b.surgeon.id)}</select></div>
       <div class="form-group"><label class="form-label">Assistant</label>
         <select class="form-select" id="th-op-assistant" ${locked ? 'disabled' : ''}>${staffOptions(TH.options.surgeons, teamRole('assistant'))}</select></div>
     </div>
@@ -823,7 +823,7 @@ function thRenderOperationPanel() {
     <div class="form-group" data-field="complications"><label class="form-label">Complications <span class="required">*</span></label>
       <textarea class="form-input" rows="2" id="th-op-complications" placeholder="Write 'None' if there were none" ${locked ? 'disabled' : ''}>${KSI.esc(o.complications || '')}</textarea></div>
     <div class="form-group"><label class="form-label">Remarks</label>
-      <textarea class="form-input" rows="2" id="th-op-remarks" ${locked ? 'disabled' : ''}>${KSI.esc(o.remarks || '')}</textarea></div>
+      <textarea class="form-input" rows="2" id="th-op-remarks" data-field="remarks" ${locked ? 'disabled' : ''}>${KSI.esc(o.remarks || '')}</textarea></div>
 
     ${o.prescription_no
       ? `<div class="cl-note">Medicine prescribed in theatre: ${KSI.esc(o.prescription_no)} — the pharmacy has it.</div>`
@@ -1029,41 +1029,41 @@ function thRenderPostopPanel() {
         <div class="form-group" data-field="visit_date"><label class="form-label">Date <span class="required">*</span></label>
           <input type="date" class="form-input" id="th-pop-date" value="${value(editing?.visit_date) || uiToday()}" ${locked ? 'disabled' : ''}></div>
         <div class="form-group"><label class="form-label">Pain (0–10)</label>
-          <input type="number" min="0" max="10" class="form-input" id="th-pop-pain" value="${value(editing?.pain_score)}" ${locked ? 'disabled' : ''}></div>
+          <input type="number" min="0" max="10" class="form-input" id="th-pop-pain" data-field="pain_score" value="${value(editing?.pain_score)}" ${locked ? 'disabled' : ''}></div>
       </div>
       <div class="form-group"><label class="form-label">How the patient is</label>
-        <textarea class="form-input" rows="${firstReview && b.template.postop_instructions ? 3 : 2}" id="th-pop-recovery" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.recovery_notes) || (firstReview ? b.template.postop_instructions || '' : ''))}</textarea></div>
+        <textarea class="form-input" rows="${firstReview && b.template.postop_instructions ? 3 : 2}" id="th-pop-recovery" data-field="recovery_notes" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.recovery_notes) || (firstReview ? b.template.postop_instructions || '' : ''))}</textarea></div>
       <div class="form-grid">
-        <div class="form-group"><label class="form-label">Vision right</label><input class="form-input" id="th-pop-va-r" maxlength="8" value="${KSI.esc(value(editing?.va_right))}" ${locked ? 'disabled' : ''}></div>
-        <div class="form-group"><label class="form-label">Vision left</label><input class="form-input" id="th-pop-va-l" maxlength="8" value="${KSI.esc(value(editing?.va_left))}" ${locked ? 'disabled' : ''}></div>
+        <div class="form-group"><label class="form-label">Vision right</label><input class="form-input" id="th-pop-va-r" data-field="va_right" maxlength="8" value="${KSI.esc(value(editing?.va_right))}" ${locked ? 'disabled' : ''}></div>
+        <div class="form-group"><label class="form-label">Vision left</label><input class="form-input" id="th-pop-va-l" data-field="va_left" maxlength="8" value="${KSI.esc(value(editing?.va_left))}" ${locked ? 'disabled' : ''}></div>
       </div>
       <div class="form-grid">
-        <div class="form-group"><label class="form-label">Pressure right</label><input type="number" class="form-input" id="th-pop-iop-r" value="${value(editing?.iop_right)}" ${locked ? 'disabled' : ''}></div>
-        <div class="form-group"><label class="form-label">Pressure left</label><input type="number" class="form-input" id="th-pop-iop-l" value="${value(editing?.iop_left)}" ${locked ? 'disabled' : ''}></div>
+        <div class="form-group"><label class="form-label">Pressure right</label><input type="number" class="form-input" id="th-pop-iop-r" data-field="iop_right" value="${value(editing?.iop_right)}" ${locked ? 'disabled' : ''}></div>
+        <div class="form-group"><label class="form-label">Pressure left</label><input type="number" class="form-input" id="th-pop-iop-l" data-field="iop_left" value="${value(editing?.iop_left)}" ${locked ? 'disabled' : ''}></div>
       </div>
       <div class="form-grid">
         <div class="form-group"><label class="form-label">Wound</label>
-          <select class="form-select" id="th-pop-wound" ${locked ? 'disabled' : ''}>
+          <select class="form-select" id="th-pop-wound" data-field="wound_status" ${locked ? 'disabled' : ''}>
             ${['', 'clean', 'inflamed', 'leaking', 'other'].map(w => `<option value="${w}" ${editing?.wound_status === w ? 'selected' : ''}>${w === '' ? 'Not recorded' : w.charAt(0).toUpperCase() + w.slice(1)}</option>`).join('')}
           </select></div>
         <div class="form-group"><label class="form-label">Counselling given</label>
-          <select class="form-select" id="th-pop-counselling" ${locked ? 'disabled' : ''}>
+          <select class="form-select" id="th-pop-counselling" data-field="counselling_type" ${locked ? 'disabled' : ''}>
             <option value="">Not recorded</option>
             ${(TH.options.counselling || []).map(c => `<option value="${KSI.esc(c)}" ${editing?.counselling_type === c ? 'selected' : ''}>${KSI.esc(c)}</option>`).join('')}
           </select></div>
       </div>
       <div class="form-group"><label class="form-label">Examination</label>
-        <textarea class="form-input" rows="2" id="th-pop-exam" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.eye_exam))}</textarea></div>
+        <textarea class="form-input" rows="2" id="th-pop-exam" data-field="eye_exam" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.eye_exam))}</textarea></div>
       <div class="form-group"><label class="form-label">Complications</label>
-        <textarea class="form-input" rows="2" id="th-pop-complications" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.complications))}</textarea></div>
+        <textarea class="form-input" rows="2" id="th-pop-complications" data-field="complications" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.complications))}</textarea></div>
       <div class="form-group"><label class="form-label">What the patient was told</label>
-        <textarea class="form-input" rows="2" id="th-pop-counsel-notes" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.counselling_notes))}</textarea></div>
+        <textarea class="form-input" rows="2" id="th-pop-counsel-notes" data-field="counselling_notes" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.counselling_notes))}</textarea></div>
       <div class="form-grid">
         <div class="form-group"><label class="form-label">Next review</label>
-          <input type="date" class="form-input" id="th-pop-followup" value="${value(editing?.follow_up_date) || (firstReview ? thTemplateReviewDate(b) : '')}" ${locked ? 'disabled' : ''}>
+          <input type="date" class="form-input" id="th-pop-followup" data-field="follow_up_date" value="${value(editing?.follow_up_date) || (firstReview ? thTemplateReviewDate(b) : '')}" ${locked ? 'disabled' : ''}>
           <div class="muted-note">Reception sees this as a follow-up due.</div></div>
         <div class="form-group"><label class="form-label">Note about the review</label>
-          <input class="form-input" id="th-pop-followup-notes" maxlength="200" value="${KSI.esc(value(editing?.follow_up_notes))}" ${locked ? 'disabled' : ''}></div>
+          <input class="form-input" id="th-pop-followup-notes" data-field="follow_up_notes" maxlength="200" value="${KSI.esc(value(editing?.follow_up_notes))}" ${locked ? 'disabled' : ''}></div>
       </div>
       ${editing?.prescription_no
         ? `<div class="cl-note">Medicine sent to the pharmacy: ${KSI.esc(editing.prescription_no)}</div>`
