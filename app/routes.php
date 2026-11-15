@@ -122,6 +122,10 @@ return static function (Router $r): void {
     // Clinical — shared
     $r->add('GET', '/clinical/options',               [ClinicalController::class, 'options'], Router::AUTH);
     $r->add('GET', '/clinical/patients/{id}/history', [ClinicalController::class, 'history'], Router::AUTH);
+    // Test results for doctors: opened from the consultation, patient history and the bell (polled)
+    $r->add('GET', '/clinical/results/unseen',         [ClinicalController::class, 'unseenResults'], 'ophthalmology.results.view', touch: false);
+    $r->add('GET', '/clinical/results/{id}',           [ClinicalController::class, 'result'], 'ophthalmology.results.view');
+    $r->add('GET', '/clinical/results/{id}/files/{fileId}', [ClinicalController::class, 'resultFile'], 'ophthalmology.results.view');
 
     // Triage, Optometry, Ophthalmology — the same workflow endpoints for each stage
     foreach (['triage' => TriageController::class, 'optometry' => OptometryController::class, 'ophthalmology' => OphthalmologyController::class] as $stage => $controller) {

@@ -14,6 +14,9 @@ use App\Core\Validator;
 use App\Services\ClinicalCatalog;
 use App\Services\ClinicalOrders;
 use App\Services\ClinicalService;
+use App\Core\FileStore;
+use App\Core\Http\Response;
+use App\Services\PatientRecordService;
 use App\Services\PatientService;
 
 /** Choices for the clinical forms, a patient's clinical history, and follow-ups due at reception. */
@@ -64,7 +67,7 @@ final class ClinicalController
     /** Completed clinical records of earlier visits, plus orders, for the history panel. */
     public function history(Request $request, array $params): array
     {
-        Auth::requireAny('triage.view', 'optometry.view', 'ophthalmology.view');
+        $ctx = Auth::requireAny('triage.view', 'optometry.view', 'ophthalmology.view');
         $patientId = (int) $params['id'];
         if (!Database::value('SELECT 1 FROM patients WHERE id = :id', ['id' => $patientId])) {
             throw HttpException::notFound('Patient not found.');
@@ -78,7 +81,8 @@ final class ClinicalController
               WHERE v.patient_id = :p AND v.id <> :except
                 AND (EXISTS (SELECT 1 FROM triage_assessments t WHERE t.visit_id = v.id AND t.status = 'completed')
                   OR EXISTS (SELECT 1 FROM optometry_assessments o WHERE o.visit_id = v.id AND o.status = 'completed')
-                  OR EXISTS (SELECT 1 FROM ophthalmology_consultations c WHERE c.visit_id = v.id AND c.status = 'completed'))
+                  OR EXISTS (SELECT 1 FROM ophthalmology_consultations c WHERE c.visit_id = v.id AND c.status = 'completed')
+                  OR EXISTS (SELECT 1 FROM diagnostic_bookings d WHERE d.visit_id = v.id AND d.status = 'completed'))
               ORDER BY v.visit_date DESC, v.id DESC LIMIT $limit",
             ['p' => $patientId, 'except' => $exceptVisit]
         );
@@ -94,7 +98,42 @@ final class ClinicalController
             ], $visits),
             'investigations' => ClinicalOrders::patientInvestigations($patientId),
             'surgery' => ClinicalOrders::patientSurgery($patientId),
+            // The rest of the record. Results are opened one at a time; theatre notes only for doctors.
+            'can_view_results' => $canSee = $ctx->can(PatientRecordService::PERMISSION),
+            'diagnostics' => PatientRecordService::diagnostics($patientId),
+            'theatre' => PatientRecordService::theatre($patientId, $canSee),
+            'medicines' => PatientRecordService::medicines($patientId),
+            'optical' => PatientRecordService::optical($patientId),
         ];
+    }
+
+    // ─── Test results (doctors) ──────────────────────────────────────────
+
+    /** One test with its report; opening it as the referring doctor clears the "result ready" alert. */
+    public function result(Request $request, array $params): array
+    {
+        $ctx = Auth::require();
+        return ['result' => Database::transaction(fn () => PatientRecordService::result((int) $params['id'], $ctx))];
+    }
+
+    /** Results waiting to be opened by the signed-in doctor (the bell). Polled: not user activity. */
+    public function unseenResults(): array
+    {
+        $results = PatientRecordService::unseen(Auth::require());
+        return ['results' => $results, 'count' => count($results)];
+    }
+
+    public function resultFile(Request $request, array $params): never
+    {
+        $row = Database::one(
+            'SELECT rf.file_id, r.patient_id FROM diagnostic_result_files rf
+               JOIN diagnostic_results r ON r.id = rf.result_id
+              WHERE r.booking_id = :b AND rf.file_id = :f AND rf.voided_at IS NULL',
+            ['b' => $params['id'], 'f' => $params['fileId']]
+        ) ?? throw HttpException::notFound('File not found.');
+        $file = FileStore::read((int) $row['file_id']);
+        Audit::access((int) $row['patient_id'], 'clinical', 'download', 'diagnostic_file', (int) $row['file_id']);
+        Response::file($file['content'], $file['mime_type'], $file['name']);
     }
 
     // ─── Follow-ups (reception) ──────────────────────────────────────────

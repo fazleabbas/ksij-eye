@@ -540,24 +540,144 @@ function clHistoryHtml(data) {
       </div>
       <div class="hist-visit-body${i === 0 ? ' open' : ''}">
         ${clTriageReadout(v.triage)}${clOptometryReadout(v.optometry)}${clOphthalmologyReadout(v.ophthalmology)}
+        ${clVisitTestsHtml(data, v.id)}
       </div>
     </div>`).join('');
+}
+
+/** Tests done in a visit, under its clinical records. */
+function clVisitTestsHtml(data, visitId) {
+  const tests = (data.diagnostics || []).filter(t => t.visit_id === visitId && t.status !== 'cancelled');
+  if (!tests.length) return '';
+  return `<div class="triage-readout"><div class="triage-readout-title">Tests</div>${tests.map(t => clTestCard(t, data.can_view_results)).join('')}</div>`;
+}
+
+const CL_TEAM_ROLES = { surgeon: 'Surgeon', assistant: 'Assistant', anaesthetist: 'Anaesthetist', scrub_nurse: 'Scrub nurse', anaesthesia_nurse: 'Anaesthesia nurse', runner: 'Runner' };
+const CL_OPTICAL_TYPES = { referral: 'Spectacles', external: 'Outside customer', frame_change: 'Frame change', extra_pair: 'Extra pair' };
+
+/** A diagnostic test: status for everyone; doctors can open the result. */
+function clTestCard(t, canView) {
+  const ready = t.result_ready;
+  return `<div class="inv-result-card"><div class="inv-result-header" style="cursor:default">
+    <div><div style="font-size:11px;font-weight:700">${KSI.esc(t.name)} · ${KSI.esc(uiLabel('eye', t.eye))}</div>
+      <div class="text-xs text-muted">${KSI.esc(t.booking_no)}${t.visit_no ? ` · ${KSI.esc(t.visit_no)}` : ''} · ${KSI.esc(uiDate(String(t.scheduled_for).slice(0, 10)))}${t.referring ? ` · ${KSI.esc(t.referring)}` : ''}</div></div>
+    <div style="display:flex;gap:6px;align-items:center">${ready ? '<span class="badge badge-complete">Result ready</span>' : uiBadge('diagnosticStatus', t.status)}
+      ${ready && canView ? `<button type="button" class="btn btn-secondary btn-sm" onclick="clResultOpen(${t.booking_id})">View result</button>` : ''}</div>
+  </div></div>`;
 }
 
 function clOrdersHtml(data) {
   const investigations = data?.investigations || [];
   const surgery = data?.surgery || [];
-  if (!investigations.length && !surgery.length) return '<div class="cl-queue-empty">No investigations or surgery recommended yet.</div>';
-  return `${investigations.length ? '<div class="hist-field-lbl" style="margin:4px 0 6px">Investigations</div>' : ''}
-    ${investigations.map(inv => `<div class="inv-result-card"><div class="inv-result-header" style="cursor:default">
-      <div><div style="font-size:11px;font-weight:700">${KSI.esc(inv.name)} · ${KSI.esc(uiLabel('eye', inv.eye))}</div>
-      <div class="text-xs text-muted">${KSI.esc(inv.request_no || '')} · ${KSI.esc(inv.visit_no)} · ${KSI.fmtDate(inv.requested_at)}</div></div>
-      ${uiBadge('investigationStatus', inv.status)}</div></div>`).join('')}
-    ${surgery.length ? '<div class="hist-field-lbl" style="margin:10px 0 6px">Surgery recommended</div>' : ''}
-    ${surgery.map(s => `<div class="inv-result-card"><div class="inv-result-header" style="cursor:default">
-      <div><div style="font-size:11px;font-weight:700">${KSI.esc(s.name)} · ${KSI.esc(uiLabel('eye', s.eye))}</div>
-      <div class="text-xs text-muted">${KSI.esc(s.recommendation_no || '')} · ${KSI.esc(uiLabel('urgency', s.urgency))} · ${KSI.esc(s.recommended_by || '')}</div></div>
-      ${uiBadge('surgeryStatus', s.status)}</div></div>`).join('')}`;
+  const tests = data?.diagnostics || [];
+  const theatre = data?.theatre || [];
+  const medicines = data?.medicines || [];
+  const optical = data?.optical || [];
+  if (![investigations, surgery, tests, theatre, medicines, optical].some(list => list.length)) {
+    return '<div class="cl-queue-empty">No tests, surgery, medicines or spectacles on record yet.</div>';
+  }
+  const heading = (label, first) => `<div class="hist-field-lbl" style="margin:${first ? 4 : 12}px 0 6px">${label}</div>`;
+  const card = (title, meta, badge, extra = '') => `<div class="inv-result-card"><div class="inv-result-header" style="cursor:default">
+      <div><div style="font-size:11px;font-weight:700">${title}</div><div class="text-xs text-muted">${meta}</div></div>${badge}</div>${extra}</div>`;
+  // Tests the doctor asked for that have not reached Diagnostics yet; the rest are listed as tests.
+  const waiting = investigations.filter(inv => !inv.booking_id && inv.status !== 'cancelled');
+  const parts = [];
+  if (tests.length || waiting.length) {
+    parts.push(heading('Tests and results', !parts.length)
+      + waiting.map(inv => card(`${KSI.esc(inv.name)} · ${KSI.esc(uiLabel('eye', inv.eye))}`,
+        `${KSI.esc(inv.request_no || '')} · ${KSI.esc(inv.visit_no)} · ${KSI.fmtDate(inv.requested_at)}`, uiBadge('investigationStatus', inv.status))).join('')
+      + tests.map(t => clTestCard(t, data.can_view_results)).join(''));
+  }
+  if (surgery.length) {
+    parts.push(heading('Surgery and procedures recommended', !parts.length) + surgery.map(s => card(`${KSI.esc(s.name)} · ${KSI.esc(uiLabel('eye', s.eye))}`,
+      `${KSI.esc(s.recommendation_no || '')} · ${KSI.esc(uiLabel('urgency', s.urgency))} · ${KSI.esc(s.recommended_by || '')}`, uiBadge('surgeryStatus', s.status))).join(''));
+  }
+  if (theatre.length) {
+    parts.push(heading('Theatre', !parts.length) + theatre.map(c => card(`${KSI.esc(c.procedures.join(', ') || '—')} · ${KSI.esc(uiLabel('eye', c.eye))}`,
+      `${KSI.esc(c.booking_no)} · ${KSI.esc(uiDate(String(c.scheduled_for).slice(0, 10)))} · ${KSI.esc(c.surgeon)}${c.room ? ` · ${KSI.esc(c.room)}` : ''}`,
+      uiBadge('theatreStatus', c.status), data.can_view_results ? clTheatreDetail(c) : '')).join(''));
+  }
+  if (medicines.length) {
+    parts.push(heading('Medicines handed over', !parts.length) + medicines.map(m => card(
+      m.items.map(i => `${KSI.esc(i.name)} × ${i.quantity}`).join(', ') || '—',
+      `${KSI.esc(m.dispensing_no)} · ${KSI.fmtDateTime(m.dispensed_at)} · ${KSI.esc(m.dispensed_by)}${m.kind === 'refill' ? ' · Refill' : ''}`, '')).join(''));
+  }
+  if (optical.length) {
+    parts.push(heading('Spectacle orders', !parts.length) + optical.map(o => card(
+      `${KSI.esc(CL_OPTICAL_TYPES[o.order_type] || o.order_type)} — ${KSI.esc(o.items.join(', ') || '—')}`,
+      `${KSI.esc(o.order_no)} · ordered ${KSI.fmtDate(o.ordered_at)}${o.dispensed_at ? ` · handed over ${KSI.fmtDate(o.dispensed_at)}` : ''}`,
+      uiBadge('opticalStatus', o.status))).join(''));
+  }
+  return parts.join('');
+}
+
+/** What happened in theatre (doctors only). */
+function clTheatreDetail(c) {
+  const field = (label, value) => (value ? `<div class="hist-field"><div class="hist-field-lbl">${label}</div><div class="hist-field-val">${KSI.esc(value)}</div></div>` : '');
+  const op = c.operation;
+  if (!op && !(c.postop || []).length && !c.discharge_remarks) return '';
+  return `<div style="padding:8px 12px 10px">
+    ${op ? `${field('Operation', [op.started_at && `Started ${KSI.fmtDateTime(op.started_at)}`, op.ended_at && `ended ${KSI.fmtDateTime(op.ended_at)}`,
+        op.anaesthesia && `${op.anaesthesia} anaesthesia`, op.as_planned === false ? 'not as planned' : ''].filter(Boolean).join(' · '))}
+      ${field('Procedure done', op.actual_procedure)}${field('Team', op.team.map(t => `${CL_TEAM_ROLES[t.role] || t.role}: ${t.name}`).join(' · '))}
+      ${field('Surgical notes', op.notes)}${field('Complications', op.complications)}${field('Remarks', op.remarks)}` : ''}
+    ${(c.postop || []).map(p => field(`Post-op review ${p.visit_number} · ${uiDate(p.visit_date)}`, [
+      `VA ${clEyePair(p.va_right, p.va_left)}`, `IOP ${clEyePair(p.iop_right, p.iop_left, ' mmHg')}`, p.wound && `wound ${p.wound}`,
+      p.pain_score != null && `pain ${p.pain_score}/10`, p.complications, p.follow_up_notes].filter(Boolean).join(' · '))).join('')}
+    ${c.discharged_at ? field(`Discharged ${KSI.fmtDate(c.discharged_at)}`, c.discharge_remarks || '—') : ''}
+  </div>`;
+}
+
+// ── Test results (doctors) ──
+async function clResultOpen(bookingId) {
+  try {
+    const { result: r } = await KSI.get(`clinical/results/${bookingId}`);
+    document.getElementById('clr-title').textContent = `${r.name} · ${uiLabel('eye', r.eye)}`;
+    document.getElementById('clr-subtitle').textContent =
+      `${r.patient.full_name} · ${r.patient.reg_no} · ${r.booking_no}${r.visit_no ? ` · Visit ${r.visit_no}` : ''}`;
+    const rep = r.report;
+    const field = (label, value) => `<div class="hist-field"><div class="hist-field-lbl">${label}</div><div class="hist-field-val" style="white-space:pre-wrap">${KSI.esc(value || '—')}</div></div>`;
+    document.getElementById('clr-body').innerHTML = rep ? `
+      ${field('Result', rep.result)}${field('Comments', rep.comments)}
+      <div class="triage-readout-grid" style="margin:10px 0">
+        <div class="tro-item"><div class="tro-label">Reporting doctor</div><div class="tro-value normal">${KSI.esc(rep.reporting_doctor.name)}</div></div>
+        <div class="tro-item"><div class="tro-label">Technician</div><div class="tro-value normal">${KSI.esc(rep.technician?.name || '—')}</div></div>
+        <div class="tro-item"><div class="tro-label">Reported</div><div class="tro-value normal">${KSI.fmtDateTime(rep.completed_at)}</div></div>
+        <div class="tro-item"><div class="tro-label">Referred by</div><div class="tro-value normal">${KSI.esc(r.referring || '—')}</div></div>
+      </div>
+      ${rep.files.length ? `<div class="hist-field-lbl">Attached files</div>${rep.files.map(f =>
+        `<div class="scan-file-item" onclick="clResultFile(${r.booking_id}, ${f.id})"><span class="scan-file-name">${KSI.esc(f.name)}</span><span class="text-xs text-muted">${KSI.fmtDate(f.uploaded_at)}</span></div>`).join('')}` : ''}
+      ${rep.addenda.length ? `<div class="hist-field-lbl" style="margin-top:10px">Addenda</div>${rep.addenda.map(a =>
+        `<div class="cl-addendum"><strong>${KSI.esc(a.reason)}</strong><div>${KSI.esc(a.note)}</div><div class="cl-addendum-meta">${KSI.esc(a.created_by)} · ${KSI.fmtDateTime(a.created_at)}</div></div>`).join('')}` : ''}`
+      : `<div class="muted-note">This test has not been reported yet (${KSI.esc(uiLabel('diagnosticStatus', r.status))}).</div>`;
+    openModal('modal-cl-result');
+    clResultsBell();
+  } catch (error) {
+    KSI.reportError(error, null, 'Cannot open the result');
+  }
+}
+
+function clResultFile(bookingId, fileId) {
+  KSI.openFile(`clinical/results/${bookingId}/files/${fileId}`).catch(error => showToast('Cannot open file', error.message, 'error'));
+}
+
+/** The bell: results waiting to be opened by this doctor. */
+async function clResultsBell() {
+  const badge = document.getElementById('notif-count');
+  const list = document.getElementById('notif-list');
+  if (!badge || !list || !KSI.can('ophthalmology.results.view')) return;
+  try {
+    const { results } = await KSI.get('clinical/results/unseen', null, { trackActivity: false });
+    badge.textContent = results.length > 99 ? '99+' : String(results.length);
+    badge.style.display = results.length ? '' : 'none';
+    list.innerHTML = results.length ? results.map(r => `<div class="notif-item" style="cursor:pointer" onclick="clResultOpen(${r.booking_id})">
+        <div class="notif-dot"></div>
+        <div><div class="notif-item-text"><strong>Result ready:</strong> ${KSI.esc(r.name)} — ${KSI.esc(r.patient.full_name)} (${KSI.esc(r.patient.reg_no)})${r.mine ? '' : ' · no referring doctor'}</div>
+          <div class="notif-item-time">${KSI.esc(r.reported_by)} · ${KSI.fmtDateTime(r.reported_at)}</div></div></div>`).join('')
+      : '<div class="notif-item"><div class="notif-item-text">No new results.</div></div>';
+  } catch {
+    // the bell is informational only
+  }
 }
 
 async function clFilesHtml(patientId) {

@@ -251,3 +251,8 @@ td .visit-id { white-space: nowrap; }
 .oph-step:first-of-type { margin-top: 6px; }
 .oph-step-no { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--teal); color: #fff; font-size: 12px; }
 .oq-source.doctor { background: var(--amber-bg, #FEF3C7); color: #92400E; }
+
+/* ── Bell: number of results waiting for the doctor ── */
+#notif-count { width: auto; min-width: 16px; height: 16px; padding: 0 4px; top: 0; right: 0; border-width: 1px; color: #fff; font-size: 10px; font-weight: 700; line-height: 14px; text-align: center; border-radius: 8px; }
+#notif-list { max-height: 360px; overflow-y: auto; }
+#notif-list .notif-item[onclick]:hover { background: var(--teal-muted); }

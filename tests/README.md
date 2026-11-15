@@ -15,6 +15,8 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `uat-round1-browser.mjs` | The same corrections, seen on screen |
 | `uat-round4.mjs` | Reception → Optometry, doctor's Clinical History and referral to Optometry (reopening the optometry record), discounts inside the Financial Summary |
 | `uat-round4-browser.mjs` | The same, on screen (form order, rooms, Optometry after a doctor's referral, report tables) |
+| `results-history.mjs` | Doctors read test results (consultation, history, bell alerts); fuller patient history; nurses see status only |
+| `results-history-browser.mjs` | The same on screen, signed in as a Doctor and as a nurse |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

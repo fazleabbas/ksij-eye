@@ -502,7 +502,7 @@ final class ClinicalOrders
     }
 
     private const INVESTIGATION_SELECT = "SELECT r.id, r.request_no, r.price_item_id, r.eye, r.priority, r.preferred_date, r.reason_enc, r.status,
-            r.requested_at, pi.name, d.booking_no, d.status AS booking_status, d.scheduled_for, b.bill_no, b.status AS bill_status, v.visit_no,
+            r.requested_at, pi.name, d.id AS booking_id, d.booking_no, d.status AS booking_status, d.scheduled_for, b.bill_no, b.status AS bill_status, v.visit_no,
             TRIM(CONCAT_WS(' ', u.first_name, u.last_name)) AS requested_by
        FROM investigation_requests r
        JOIN price_items pi ON pi.id = r.price_item_id
@@ -520,6 +520,9 @@ final class ClinicalOrders
             'requested_at' => Format::utc($r['requested_at']), 'requested_by' => $r['requested_by'] ?: null,
             'bill_no' => $r['bill_no'], 'bill_status' => $r['bill_status'], 'visit_no' => $r['visit_no'],
             'booking_no' => $r['booking_no'], 'booking_status' => $r['booking_status'], 'scheduled_for' => Format::utc($r['scheduled_for']),
+            // The test has been reported: doctors can open the result from the consultation.
+            'booking_id' => $r['booking_id'] === null ? null : (int) $r['booking_id'],
+            'result_ready' => $r['booking_status'] === 'completed',
         ], $rows);
     }
 

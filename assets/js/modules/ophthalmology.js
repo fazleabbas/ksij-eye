@@ -201,7 +201,10 @@ const OPH_FORM = {
       <div><div style="font-size:12px;font-weight:700">${KSI.esc(x.name)} · ${KSI.esc(uiLabel('eye', x.eye))}</div>
         <div class="text-xs text-muted">${KSI.esc(x.request_no || x.recommendation_no || '')} · ${KSI.esc(isInv ? uiLabel('priority', x.priority) : uiLabel('urgency', x.urgency))}${x.bill_no ? ` · Bill ${KSI.esc(x.bill_no)}` : ''}</div>
         <div class="text-xs">${KSI.esc(isInv ? x.reason : x.indication)}</div></div>
-      ${uiBadge(isInv ? 'investigationStatus' : 'surgeryStatus', x.status)}</div></div>`).join('');
+      ${isInv && x.result_ready
+        ? `<div style="display:flex;gap:6px;align-items:center"><span class="badge badge-complete">Result ready</span>${KSI.can('ophthalmology.results.view')
+          ? `<button type="button" class="btn btn-secondary btn-sm" onclick="clResultOpen(${x.booking_id})">View result</button>` : ''}</div>`
+        : uiBadge(isInv ? 'investigationStatus' : 'surgeryStatus', x.status)}</div></div>`).join('');
 
     const rows = this.orders[kind].map((row, i) => {
       // Procedures follow the surgery rows in the saved list, so errors come back numbered that way.

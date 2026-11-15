@@ -28,3 +28,20 @@
     </div>
   </div>
 </div>
+
+<!-- ══ TEST RESULT (doctors: from the consultation, patient history and the bell) ══ -->
+<div class="modal-overlay" id="modal-cl-result">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="clr-title">Test result</div>
+        <div class="modal-subtitle" id="clr-subtitle"></div>
+      </div>
+      <button class="modal-close" type="button" onclick="closeModal('modal-cl-result')" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="clr-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" type="button" onclick="closeModal('modal-cl-result')">Close</button>
+    </div>
+  </div>
+</div>

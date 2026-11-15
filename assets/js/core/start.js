@@ -22,6 +22,9 @@ function inRange(dateStr,from,to){
 document.addEventListener('DOMContentLoaded', () => {
   updateApprovalsBadge();
   setInterval(updateApprovalsBadge, 120000);
+  // Doctors: results ready for tests they referred.
+  clResultsBell();
+  setInterval(clResultsBell, 60000);
   applyRoleNavVisibility();
   const first = defaultModuleForUser();
   showModule(first, first === 'placeholder' ? 'No Access —' : '');

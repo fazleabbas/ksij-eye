@@ -48,6 +48,7 @@ return static function (PDO $pdo): void {
         ['ophthalmology.record', 'Clinical', 'Record ophthalmology consultations'],
         ['ophthalmology.investigations.request', 'Clinical', 'Request investigations from a consultation'],
         ['ophthalmology.surgery.recommend', 'Clinical', 'Recommend surgery from a consultation'],
+        ['ophthalmology.results.view', 'Clinical', 'See test results and theatre notes in patient history; told when results are ready'],
 
         ['theatre.booking.view', 'Theatre', 'View theatre bookings'],
         ['theatre.booking.manage', 'Theatre', 'Create and edit theatre bookings'],
