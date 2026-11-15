@@ -156,6 +156,69 @@ final class ClinicalOrders
         return $number;
     }
 
+    /**
+     * A prescription issued straight away (theatre, diagnostics) — no draft stage. The pharmacy picks it up
+     * on its next look at the queue. $prescriberId is who the pharmacy sees as the prescriber.
+     */
+    public static function issueDirect(string $source, int $recordId, int $patientId, ?int $visitId, array $medicines, ?string $instructions, int $userId, ?int $prescriberId = null): int
+    {
+        $key = Format::localDateKey();
+        $prescriptionId = Database::insert(
+            'INSERT INTO prescriptions (prescription_no, patient_id, visit_id, source, record_id, status,
+                                        pharmacy_instructions_enc, issued_at, issued_by, created_at, created_by)
+             VALUES (:no, :patient, :visit, :source, :record, :status, :instructions, UTC_TIMESTAMP(3), :by, UTC_TIMESTAMP(3), :by2)',
+            [
+                'no' => sprintf('RX-%s-%03d', $key, Sequence::next("prescription:$key")),
+                'patient' => $patientId, 'visit' => $visitId, 'source' => $source, 'record' => $recordId, 'status' => 'issued',
+                'instructions' => ($instructions === null || $instructions === '') ? null : Crypto::encrypt($instructions, 'prescriptions.pharmacy_instructions'),
+                'by' => $prescriberId ?? $userId, 'by2' => $userId,
+            ]
+        );
+        foreach ($medicines as $index => $medicine) {
+            $drug = Database::one('SELECT id FROM drugs WHERE id = :id AND is_active = 1', ['id' => (int) $medicine['drug_id']])
+                ?? throw HttpException::validation(['medicines' => 'A medicine is no longer in the catalogue.']);
+            Database::execute(
+                'INSERT INTO prescription_items (prescription_id, drug_id, quantity, dose, frequency, duration, instructions_enc, sort_order)
+                 VALUES (:p, :drug, :qty, :dose, :freq, :duration, :instructions, :sort)',
+                [
+                    'p' => $prescriptionId, 'drug' => (int) $drug['id'], 'qty' => max(1, (int) ($medicine['quantity'] ?? 1)),
+                    'dose' => $medicine['dose'] ?? null, 'freq' => $medicine['frequency'] ?? null,
+                    'duration' => $medicine['duration'] ?? null,
+                    'instructions' => ($medicine['instructions'] ?? '') === '' ? null : Crypto::encrypt($medicine['instructions'], 'prescription_items.instructions'),
+                    'sort' => $index,
+                ]
+            );
+        }
+        return $prescriptionId;
+    }
+
+    /**
+     * Stocked medicine lines from a form (drug, quantity, dose, frequency, duration). Empty lines are
+     * skipped; a medicine taken out of the catalogue is a field error.
+     */
+    public static function directMedicines(mixed $input): array
+    {
+        $medicines = [];
+        foreach (is_array($input) ? $input : [] as $index => $row) {
+            $drugId = (int) ($row['drug_id'] ?? 0);
+            if ($drugId === 0) {
+                continue;
+            }
+            if (!Database::value('SELECT 1 FROM drugs WHERE id = :id AND is_active = 1', ['id' => $drugId])) {
+                throw HttpException::validation(["medicines.$index.drug_id" => 'This medicine is no longer in the catalogue.']);
+            }
+            $medicines[] = [
+                'drug_id' => $drugId,
+                'quantity' => max(1, (int) ($row['quantity'] ?? 1)),
+                'dose' => isset($row['dose']) ? mb_substr((string) $row['dose'], 0, 40) : null,
+                'frequency' => isset($row['frequency']) ? mb_substr((string) $row['frequency'], 0, 20) : null,
+                'duration' => isset($row['duration']) ? mb_substr((string) $row['duration'], 0, 40) : null,
+                'instructions' => isset($row['instructions']) ? mb_substr((string) $row['instructions'], 0, 200) : null,
+            ];
+        }
+        return $medicines;
+    }
+
     /** Until when the issuing doctor may still change an issued prescription; null when they may not. */
     public static function amendableUntil(array $row, ?AuthContext $ctx): ?string
     {

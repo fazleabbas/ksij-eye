@@ -42,6 +42,8 @@ run "pharmacy refill api"  node pharmacy-refill.mjs
 run "pharmacy refill browser" node pharmacy-refill-browser.mjs
 run "theatre errors browser" node theatre-errors-browser.mjs
 run "post-op layout browser" node postop-layout-browser.mjs
+run "diagnostic rx api"   node diagnostic-prescriptions.mjs
+run "diagnostic rx browser" node diagnostic-prescriptions-browser.mjs
 run "all screens"         node smoke-modules.mjs
 
 if [ -n "$FAILED" ]; then printf "\nSuites that failed or crashed:%b\n" "$FAILED"; exit 1; fi

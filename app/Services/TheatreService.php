@@ -1169,37 +1169,9 @@ final class TheatreService
         return ($value === null || $value === '') ? null : Crypto::encrypt($value, $context);
     }
 
-    /** An issued prescription the pharmacy will pick up on its next look at the queue. */
     private static function issuePrescription(string $source, int $recordId, int $patientId, ?int $visitId, array $medicines, ?string $instructions, int $userId): int
     {
-        $key = Format::localDateKey();
-        $prescriptionId = Database::insert(
-            'INSERT INTO prescriptions (prescription_no, patient_id, visit_id, source, record_id, status,
-                                        pharmacy_instructions_enc, issued_at, issued_by, created_at, created_by)
-             VALUES (:no, :patient, :visit, :source, :record, :status, :instructions, UTC_TIMESTAMP(3), :by, UTC_TIMESTAMP(3), :by2)',
-            [
-                'no' => sprintf('RX-%s-%03d', $key, Sequence::next("prescription:$key")),
-                'patient' => $patientId, 'visit' => $visitId, 'source' => $source, 'record' => $recordId, 'status' => 'issued',
-                'instructions' => self::enc($instructions, 'prescriptions.pharmacy_instructions'),
-                'by' => $userId, 'by2' => $userId,
-            ]
-        );
-        foreach ($medicines as $index => $medicine) {
-            $drug = Database::one('SELECT id FROM drugs WHERE id = :id AND is_active = 1', ['id' => (int) $medicine['drug_id']])
-                ?? throw HttpException::validation(['medicines' => 'A medicine is no longer in the catalogue.']);
-            Database::execute(
-                'INSERT INTO prescription_items (prescription_id, drug_id, quantity, dose, frequency, duration, instructions_enc, sort_order)
-                 VALUES (:p, :drug, :qty, :dose, :freq, :duration, :instructions, :sort)',
-                [
-                    'p' => $prescriptionId, 'drug' => (int) $drug['id'], 'qty' => max(1, (int) ($medicine['quantity'] ?? 1)),
-                    'dose' => $medicine['dose'] ?? null, 'freq' => $medicine['frequency'] ?? null,
-                    'duration' => $medicine['duration'] ?? null,
-                    'instructions' => self::enc($medicine['instructions'] ?? null, 'prescription_items.instructions'),
-                    'sort' => $index,
-                ]
-            );
-        }
-        return $prescriptionId;
+        return ClinicalOrders::issueDirect($source, $recordId, $patientId, $visitId, $medicines, $instructions, $userId, $userId);
     }
 
     /** A review date becomes a real follow-up, so reception can book the visit. */

@@ -16,6 +16,7 @@ const DIAG = {
   cancelTarget: null,
   checkInTarget: null,
   pendingReport: null,  // report saved while the test had no bill
+  meds: [],             // medicine lines on the open report, sent to the pharmacy on save
 };
 
 async function diagOptions() {
@@ -485,12 +486,14 @@ function diagRenderQueue() {
 async function diagSelectCase(id) {
   const { booking } = await KSI.get(`diagnostics/bookings/${id}`);
   DIAG.selected = booking;
+  DIAG.meds = [];
   diagRenderQueue();
   diagRenderReportPanel();
 }
 
 function diagClearCase() {
   DIAG.selected = null;
+  DIAG.meds = [];
   diagRenderQueue();
   diagRenderReportPanel();
 }
@@ -564,6 +567,8 @@ function diagRenderReportPanel() {
           placeholder="Anything the referring doctor should note…">${KSI.esc(report?.comments || '')}</textarea>
       </div>
 
+      ${diagMedicinesHtml(report, readOnly)}
+
       ${report ? diagFilesHtml(b) : '<div class="muted-note">Scans and printouts can be attached once the report is saved.</div>'}
       ${report ? diagAddendaHtml(report) : ''}
 
@@ -582,6 +587,72 @@ function diagRenderReportPanel() {
     document.getElementById('diag-rep-technician').value = report.technician?.id || '';
     document.getElementById('diag-rep-doctor').value = report.reporting_doctor.id;
   }
+  diagRenderMeds();
+}
+
+// ─── Medicines: sent to the pharmacy with the report, billed there as usual ──
+
+function diagMedicinesHtml(report, readOnly) {
+  if (report?.prescription_no) {
+    return `<div class="cl-note">
+      <div class="pcd-label">Medicine sent to the pharmacy · ${KSI.esc(report.prescription_no)}</div>
+      ${(report.medicines || []).map(m => `<div>${KSI.esc(m.name)} × ${m.quantity}${[m.dose, m.frequency, m.duration].filter(Boolean).length
+        ? ` — ${KSI.esc([m.dose, m.frequency, m.duration].filter(Boolean).join(', '))}` : ''}</div>`).join('')}
+    </div>`;
+  }
+  if (readOnly || !KSI.can('diagnostics.report.record')) return '';
+  return `<div class="form-group" data-field="medicines">
+      <label class="form-label">Medicines</label>
+      <select class="form-select" id="diag-rep-drug" onchange="diagAddMed(this.value)"></select>
+      <div class="table-wrap" style="margin-top:8px">
+        <table>
+          <thead><tr><th>Medicine</th><th>How many</th><th>Dose</th><th>How often</th><th>For how long</th><th></th></tr></thead>
+          <tbody id="diag-rep-meds"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="form-group" data-field="pharmacy_instructions">
+      <label class="form-label">Note for the pharmacy</label>
+      <input class="form-input" id="diag-rep-pharm-instructions" maxlength="200">
+      <div class="muted-note">Sent to the pharmacy when you ${report ? 'save' : 'submit the report'}; the patient pays at the cashier before it is handed over.</div>
+    </div>`;
+}
+
+function diagRenderMeds() {
+  const body = document.getElementById('diag-rep-meds');
+  if (!body) return;
+  const chosen = DIAG.meds.map(m => m.drug_id);
+  admFillSelect('diag-rep-drug', 'Add a medicine', (DIAG.options.drugs || []).filter(d => !chosen.includes(d.id)).map(d => [d.id, d.name]));
+  body.innerHTML = DIAG.meds.length
+    ? DIAG.meds.map((m, index) => `<tr>
+        <td>${KSI.esc(m.name)}</td>
+        <td><input type="number" class="form-input" min="1" value="${m.quantity}" style="width:70px" onchange="diagSetMed(${index}, 'quantity', this.value)"></td>
+        <td><input class="form-input" value="${KSI.esc(m.dose || '')}" style="width:90px" onchange="diagSetMed(${index}, 'dose', this.value)"></td>
+        <td><input class="form-input" value="${KSI.esc(m.frequency || '')}" style="width:90px" onchange="diagSetMed(${index}, 'frequency', this.value)"></td>
+        <td><input class="form-input" value="${KSI.esc(m.duration || '')}" style="width:100px" onchange="diagSetMed(${index}, 'duration', this.value)"></td>
+        <td><button class="action-btn action-cancel" onclick="diagRemoveMed(${index})">Remove</button></td>
+      </tr>`).join('')
+    : '<tr class="table-state"><td colspan="6">No medicine added.</td></tr>';
+}
+
+function diagAddMed(drugId) {
+  const drug = (DIAG.options.drugs || []).find(d => d.id === Number(drugId));
+  if (!drug) return;
+  DIAG.meds.push({
+    drug_id: drug.id, name: drug.name, quantity: 1,
+    dose: drug.default_dose || '', frequency: drug.default_frequency || '', duration: drug.default_duration || '',
+  });
+  diagRenderMeds();
+}
+
+function diagSetMed(index, field, value) {
+  if (!DIAG.meds[index]) return;
+  DIAG.meds[index][field] = field === 'quantity' ? Math.max(1, Number(value) || 1) : value;
+}
+
+function diagRemoveMed(index) {
+  DIAG.meds.splice(index, 1);
+  diagRenderMeds();
 }
 
 function diagFilesHtml(booking) {
@@ -623,13 +694,17 @@ async function diagSaveReport(button) {
     technician_user_id: document.getElementById('diag-rep-technician').value || null,
     result: document.getElementById('diag-rep-result').value,
     comments: document.getElementById('diag-rep-comments').value,
+    medicines: DIAG.meds.map(m => ({ drug_id: m.drug_id, quantity: m.quantity, dose: m.dose, frequency: m.frequency, duration: m.duration })),
+    pharmacy_instructions: document.getElementById('diag-rep-pharm-instructions')?.value || '',
     row_version: booking.report?.row_version || 0,
   };
   await admBusy(button, async () => {
     try {
       const saved = await KSI.put(`diagnostics/bookings/${booking.id}/report`, payload);
       DIAG.selected = saved.booking;
-      showToast('Report saved', `${saved.booking.booking_no} has been reported.`, 'success');
+      DIAG.meds = [];
+      const rx = saved.booking.report?.prescription_no;
+      showToast('Report saved', `${saved.booking.booking_no} has been reported.${payload.medicines.length && rx ? ` Medicine sent to the pharmacy (${rx}).` : ''}`, 'success');
       if (saved.unbilled) diagOpenUnbilled(saved.booking);
       await diagLoadQueue();
       diagRenderReportPanel();
@@ -784,6 +859,7 @@ async function diagViewReport(id) {
     <div class="cl-readout-note">${KSI.esc(booking.report?.result || 'No result was recorded.')}</div>
     <div class="form-label" style="margin-top:14px">Comments</div>
     <div class="cl-readout-note">${KSI.esc(booking.report?.comments || 'No comments.')}</div>
+    ${booking.report?.prescription_no ? diagMedicinesHtml(booking.report, true) : ''}
     ${booking.report ? diagFilesHtml(booking) : ''}
     ${booking.report ? diagAddendaHtml(booking.report) : ''}`;
   openModal('modal-diag-view');

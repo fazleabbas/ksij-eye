@@ -10,6 +10,7 @@ use App\Core\Format;
 use App\Core\Http\HttpException;
 use App\Core\Http\Request;
 use App\Core\Validator;
+use App\Services\ClinicalOrders;
 use App\Services\ClinicalService;
 use App\Services\TheatreService;
 
@@ -434,25 +435,7 @@ final class TheatreController
 
     private function medicines(mixed $input): array
     {
-        $medicines = [];
-        foreach (is_array($input) ? $input : [] as $index => $row) {
-            $drugId = (int) ($row['drug_id'] ?? 0);
-            if ($drugId === 0) {
-                continue;
-            }
-            if (!Database::value('SELECT 1 FROM drugs WHERE id = :id AND is_active = 1', ['id' => $drugId])) {
-                throw HttpException::validation(["medicines.$index.drug_id" => 'This medicine is no longer in the catalogue.']);
-            }
-            $medicines[] = [
-                'drug_id' => $drugId,
-                'quantity' => max(1, (int) ($row['quantity'] ?? 1)),
-                'dose' => isset($row['dose']) ? mb_substr((string) $row['dose'], 0, 40) : null,
-                'frequency' => isset($row['frequency']) ? mb_substr((string) $row['frequency'], 0, 20) : null,
-                'duration' => isset($row['duration']) ? mb_substr((string) $row['duration'], 0, 40) : null,
-                'instructions' => isset($row['instructions']) ? mb_substr((string) $row['instructions'], 0, 200) : null,
-            ];
-        }
-        return $medicines;
+        return ClinicalOrders::directMedicines($input);
     }
 
     private function biometryInput(mixed $input): ?array

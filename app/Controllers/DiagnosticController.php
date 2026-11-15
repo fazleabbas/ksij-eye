@@ -12,6 +12,7 @@ use App\Core\Http\HttpException;
 use App\Core\Http\Request;
 use App\Core\Http\Response;
 use App\Core\Validator;
+use App\Services\ClinicalOrders;
 use App\Services\ClinicalService;
 use App\Services\DiagnosticService;
 
@@ -32,6 +33,11 @@ final class DiagnosticController
             'no_charge_reasons' => $this->lookup('no_charge_reason'),
             'doctors' => $this->staff(['ophthalmologist', 'surgeon', 'optometrist']),
             'technicians' => $this->staff(['diagnostic_technician', 'nurse']),
+            // Medicines a report may send to the pharmacy.
+            'drugs' => array_map(static fn (array $r) => [
+                'id' => (int) $r['id'], 'name' => $r['name'],
+                'default_dose' => $r['default_dose'], 'default_frequency' => $r['default_frequency'], 'default_duration' => $r['default_duration'],
+            ], Database::all('SELECT id, name, default_dose, default_frequency, default_duration FROM drugs WHERE is_active = 1 ORDER BY name')),
             'edit_hours' => ClinicalService::editHours(),
         ];
     }
@@ -173,8 +179,10 @@ final class DiagnosticController
             ->int('reporting_user_id', true, 1)
             ->string('result', false, 8000)
             ->string('comments', false, 4000)
+            ->string('pharmacy_instructions', false, 1000)
             ->int('row_version', false, 0)
             ->validate();
+        $medicines = ClinicalOrders::directMedicines($request->all()['medicines'] ?? null);
         $technicianId = $request->all()['technician_user_id'] ?? null;
         $technicianId = $technicianId === null || $technicianId === '' ? null : (int) $technicianId;
         $this->assertStaff((int) $v['reporting_user_id'], 'reporting_user_id');
@@ -186,12 +194,19 @@ final class DiagnosticController
             'technician_user_id' => $technicianId,
             'result' => (string) ($v['result'] ?? ''),
             'comments' => (string) ($v['comments'] ?? ''),
+            'medicines' => $medicines,
+            'pharmacy_instructions' => $v['pharmacy_instructions'] ?? null,
             'row_version' => $v['row_version'] ?? 0,
         ], $ctx);
         $booking = DiagnosticService::show((int) $params['id'], $ctx);
         Audit::log('diagnostics', $saved['created'] ? 'diagnostic.reported' : 'diagnostic.report_corrected',
             ($saved['created'] ? 'Reported ' : 'Corrected the report for ') . $booking['booking_no'],
             'diagnostic_booking', $booking['booking_no']);
+        if ($saved['prescription_no'] !== null) {
+            Audit::log('diagnostics', 'diagnostic.prescribed',
+                "Sent medicine for {$booking['booking_no']} to the pharmacy ({$saved['prescription_no']})",
+                'diagnostic_booking', $booking['booking_no']);
+        }
         return ['booking' => $booking, 'unbilled' => $booking['bill'] === null];
     }
 

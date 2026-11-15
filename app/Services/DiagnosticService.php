@@ -477,7 +477,21 @@ final class DiagnosticService
                     ]
                 );
             }
-            return ['result_id' => $resultId, 'created' => $existing === null];
+            $prescriptionNo = null;
+            if (($data['medicines'] ?? []) !== []) {
+                if ($existing !== null && $existing['prescription_id'] !== null) {
+                    throw HttpException::conflict('prescribed', 'Medicine for this report has already been sent to the pharmacy.');
+                }
+                // Same road as every prescription: pharmacy review, bill at today's price, cashier, hand over.
+                $prescriptionId = ClinicalOrders::issueDirect(
+                    'diagnostic', $resultId, (int) $booking['patient_id'],
+                    $booking['visit_id'] === null ? null : (int) $booking['visit_id'],
+                    $data['medicines'], $data['pharmacy_instructions'] ?? null, $ctx->userId, (int) $data['reporting_user_id']
+                );
+                Database::execute('UPDATE diagnostic_results SET prescription_id = :p WHERE id = :id', ['p' => $prescriptionId, 'id' => $resultId]);
+                $prescriptionNo = Database::value('SELECT prescription_no FROM prescriptions WHERE id = :id', ['id' => $prescriptionId]);
+            }
+            return ['result_id' => $resultId, 'created' => $existing === null, 'prescription_no' => $prescriptionNo];
         });
     }
 
@@ -505,11 +519,12 @@ final class DiagnosticService
         $r = Database::one(
             "SELECT r.*, TRIM(CONCAT_WS(' ', d.first_name, d.last_name)) AS reporting_name,
                     TRIM(CONCAT_WS(' ', t.first_name, t.last_name)) AS technician_name,
-                    TRIM(CONCAT_WS(' ', c.first_name, c.last_name)) AS completed_by_name
+                    TRIM(CONCAT_WS(' ', c.first_name, c.last_name)) AS completed_by_name, pr.prescription_no
                FROM diagnostic_results r
                JOIN users d ON d.id = r.reporting_user_id
                JOIN users c ON c.id = r.completed_by
                LEFT JOIN users t ON t.id = r.technician_user_id
+               LEFT JOIN prescriptions pr ON pr.id = r.prescription_id
               WHERE r.booking_id = :b",
             ['b' => $bookingId]
         );
@@ -522,6 +537,8 @@ final class DiagnosticService
             'reporting_doctor' => ['id' => (int) $r['reporting_user_id'], 'name' => $r['reporting_name']],
             'result' => Crypto::decrypt($r['result_enc'], 'diagnostic_results.result'),
             'comments' => Crypto::decrypt($r['comments_enc'], 'diagnostic_results.comments'),
+            'prescription_no' => $r['prescription_no'],
+            'medicines' => $r['prescription_id'] === null ? [] : self::prescribedMedicines((int) $r['prescription_id']),
             'completed_at' => Format::utc($r['completed_at']),
             'completed_by' => $r['completed_by_name'],
             'updated_at' => Format::utc($r['updated_at']),
@@ -530,6 +547,20 @@ final class DiagnosticService
             'files' => self::files((int) $r['id']),
             'addenda' => ClinicalService::addenda('diagnostic', (int) $r['id']),
         ];
+    }
+
+    /** The medicines a report sent to the pharmacy, as prescribed. */
+    private static function prescribedMedicines(int $prescriptionId): array
+    {
+        return array_map(static fn (array $m) => [
+            'name' => $m['name'], 'quantity' => (int) $m['quantity'], 'dose' => $m['dose'],
+            'frequency' => $m['frequency'], 'duration' => $m['duration'],
+        ], Database::all(
+            'SELECT d.name, i.quantity, i.dose, i.frequency, i.duration
+               FROM prescription_items i JOIN drugs d ON d.id = i.drug_id
+              WHERE i.prescription_id = :p ORDER BY i.sort_order, i.id',
+            ['p' => $prescriptionId]
+        ));
     }
 
     public static function files(int $resultId): array
