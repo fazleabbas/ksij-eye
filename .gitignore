@@ -18,3 +18,4 @@ Desktop.ini
 /tests/admin-pass.txt
 /tests/shots/
 /.claude/settings.local.json
+error_log
