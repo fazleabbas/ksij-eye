@@ -128,7 +128,7 @@ final class ClinicalInput
         return $value;
     }
 
-    /** Snellen visual acuity or CF / HM / PL / NPL. */
+    /** Snellen visual acuity, CF (with distance), HM, PL, NPL or Ø (no eye). */
     public function va(string $path): ?string
     {
         return $this->enum($path, ClinicalService::VA_VALUES);

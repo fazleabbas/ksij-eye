@@ -31,7 +31,7 @@ final class ClinicalService
         ],
     ];
 
-    public const VA_VALUES = ['6/5', '6/6', '6/7.5', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60', '5/60', '4/60', '3/60', '2/60', '1/60', 'CF', 'HM', 'PL', 'NPL'];
+    public const VA_VALUES = ['6/5', '6/6', '6/7.5', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60', '5/60', '4/60', '3/60', '2/60', '1/60', 'CF', 'CF 3M', 'CF 2M', 'CF 1M', 'CFN', 'HM', 'PL', 'NPL', 'Ø'];
 
     /** Author names for a clinical record aliased r (use with AUDIT_JOINS). */
     public const AUDIT_COLUMNS = "TRIM(CONCAT_WS(' ', cu.first_name, cu.last_name)) AS created_by_name,
