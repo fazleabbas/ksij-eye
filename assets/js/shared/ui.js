@@ -11,7 +11,7 @@ const UI_LABELS = {
   },
   visitType: { consultation: 'Consultation', follow_up: 'Follow-Up' },
   subType: { normal: 'Normal', fast_track: 'Fast Track', doctor_follow_up: 'Doctor Follow-Up', surgery_follow_up: 'Surgery Follow-Up' },
-  destination: { doctor_room: 'Doctor Room', triage: 'Triage', investigation: 'Investigation' },
+  destination: { doctor_room: 'Doctor Room', triage: 'Triage', investigation: 'Investigation', optometry: 'Optometry' },
   billStatus: {
     pending: 'Pending', discount_requested: 'Discount Requested', cancellation_requested: 'Cancellation Requested',
     paid: 'Paid', exempted: 'Exempted', cancelled: 'Cancelled', refunded: 'Refunded', partially_refunded: 'Partly Refunded',

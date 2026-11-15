@@ -24,6 +24,7 @@ const vsFilterChanged = uiDebounce(() => {
 
 function vsDestinationText(visit) {
   if (visit.destination === 'doctor_room' && visit.room) return `Doctor Room — ${visit.room}`;
+  if (visit.destination === 'optometry' && visit.room) return `Optometry — ${visit.room}`;
   if (visit.destination === 'investigation' && visit.investigation) return `Investigation — ${visit.investigation}`;
   return uiLabel('destination', visit.destination);
 }
@@ -175,8 +176,7 @@ async function vsOpenNewVisit(patient = null, followUp = null) {
   document.getElementById('nv-reason').value = '';
   document.getElementById('nv-emergency-reason').value = '';
   document.getElementById('nv-visit-date').textContent = uiDate(options.today);
-  document.getElementById('nv-room').innerHTML = '<option value="">Select room…</option>'
-    + options.rooms.map(room => `<option value="${KSI.esc(room)}">${KSI.esc(room)}</option>`).join('');
+  VISIT_UI.roomsFor = null;
   document.getElementById('nv-investigation').innerHTML = '<option value="">Select investigation…</option>'
     + options.investigations.map(i => `<option value="${i.id}">${KSI.esc(i.name)} — ${uiMoney(i.price)}</option>`).join('');
   document.getElementById('nv-doctor').innerHTML = '<option value="">Not specified</option>'
@@ -240,10 +240,22 @@ function vsOnFormChange() {
   uiSyncRadioCards(modal);
   const destination = uiRadioValue('nv-destination');
   const emergency = document.getElementById('nv-emergency').checked;
-  document.getElementById('nv-room-group').style.display = destination === 'doctor_room' ? '' : 'none';
+  const hasRoom = destination === 'doctor_room' || destination === 'optometry';
+  document.getElementById('nv-room-group').style.display = hasRoom ? '' : 'none';
+  if (hasRoom) vsFillRooms(destination);
   document.getElementById('nv-investigation-group').style.display = destination === 'investigation' ? '' : 'none';
   document.getElementById('nv-emergency-reason-group').style.display = emergency ? '' : 'none';
   vsQuote();
+}
+
+/** The Doctor Room and Optometry each have their own rooms; refill only when the destination changes. */
+function vsFillRooms(destination) {
+  if (VISIT_UI.roomsFor === destination) return;
+  VISIT_UI.roomsFor = destination;
+  const rooms = destination === 'optometry' ? VISIT_UI.options.optometry_rooms || [] : VISIT_UI.options.rooms;
+  document.getElementById('nv-room-label').innerHTML = `${destination === 'optometry' ? 'Optometry Room' : 'Consultation Room'} <span class="required">*</span>`;
+  document.getElementById('nv-room').innerHTML = '<option value="">Select room…</option>'
+    + rooms.map(room => `<option value="${KSI.esc(room)}">${KSI.esc(room)}</option>`).join('');
 }
 
 const vsQuote = uiDebounce(async () => {
@@ -297,7 +309,7 @@ async function vsSaveVisit(confirmOpenVisit = false) {
     sub_type: uiRadioValue('nv-sub-type'),
     fast_track: document.getElementById('nv-fast-track').checked,
     destination,
-    room: destination === 'doctor_room' ? document.getElementById('nv-room').value : '',
+    room: destination === 'doctor_room' || destination === 'optometry' ? document.getElementById('nv-room').value : '',
     investigation_item_id: destination === 'investigation' ? document.getElementById('nv-investigation').value : '',
     investigation_eye: destination === 'investigation' ? uiRadioValue('nv-eye') : '',
     referring_doctor_id: destination === 'investigation' ? document.getElementById('nv-doctor').value : '',

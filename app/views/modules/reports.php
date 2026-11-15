@@ -43,7 +43,7 @@
             <input type="date" class="filter-select" id="rp-to" onchange="rpLoad()" title="To">
             <select class="filter-select" id="rp-status" onchange="rpLoad()" style="display:none"></select>
             <select class="filter-select" id="rp-scheme" onchange="rpLoad()" style="display:none"></select>
-            <input type="number" class="filter-select" id="rp-max-age" onchange="rpLoad()" placeholder="Up to age" style="display:none;max-width:130px">
+            <input type="number" class="filter-select" id="rp-max-age" onchange="rpLoad()" placeholder="Discounts: up to age" style="display:none;max-width:170px">
             <div class="search-wrap">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <input type="text" class="search-input" id="rp-search" placeholder="Search this report…" oninput="uiDebounce(rpLoad, 400)()">

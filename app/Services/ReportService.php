@@ -26,7 +26,6 @@ final class ReportService
     public const REPORTS = [
         'collections' => ['title' => 'Daily Collections', 'permission' => 'reports.financial', 'days' => 0],
         'financial' => ['title' => 'Financial Summary', 'permission' => 'reports.financial', 'days' => 30],
-        'waivers' => ['title' => 'Discounts and Waivers', 'permission' => 'reports.financial', 'days' => 30],
         'reception' => ['title' => 'Reception and Visits', 'permission' => 'reports.view', 'days' => 7],
         'patients' => ['title' => 'Patients', 'permission' => 'reports.view', 'days' => 30],
         'diagnostics' => ['title' => 'Diagnostic Tests', 'permission' => 'reports.clinical', 'days' => 30],
@@ -50,7 +49,6 @@ final class ReportService
         $report = match ($type) {
             'collections' => self::collections($from, $to, $filters),
             'financial' => self::financial($from, $to, $filters),
-            'waivers' => self::waivers($from, $to, $filters),
             'reception' => self::reception($from, $to, $filters),
             'patients' => self::patients($from, $to, $filters),
             'diagnostics' => self::diagnostics($from, $to, $filters),
@@ -333,13 +331,17 @@ final class ReportService
                     'total' => self::money($item['total']), 'bills' => $cases];
             }
         }
+        // The clinic asked for the discounts to be part of this report rather than a report of their own.
+        $discountSection = self::discounts($from, $to, $filters);
         return [
             'kpis' => [
                 ['label' => 'Billed', 'value' => self::money($billed), 'money' => true],
                 ['label' => 'Collected', 'value' => self::money($collected), 'money' => true],
                 ['label' => 'Discounts given', 'value' => self::money($discounts), 'money' => true],
                 ['label' => 'Still owed', 'value' => self::money($outstanding), 'money' => true],
+                ...$discountSection['kpis'],
             ],
+            'summaries' => $discountSection['summaries'],
             'summary' => [
                 'title' => 'Collected by category and item — VIP and normal',
                 'columns' => [
@@ -368,13 +370,17 @@ final class ReportService
         ];
     }
 
-    // ─── Discounts and waivers ───────────────────────────────────────────
+    // ─── Discounts (part of the Financial Summary) ───────────────────────
 
-    /** Every scheme in one report: filter by discount type, or by age for the children's scheme. */
-    private static function waivers(string $from, string $to, array $filters): array
+    /**
+     * Discounted bills of the period, by scheme and one by one with who approved them. The scheme
+     * and age filters (the children's scheme) narrow this section only. Cancelled bills gave
+     * nothing up, so they are left out, as in the Financial Summary's own totals.
+     */
+    private static function discounts(string $from, string $to, array $filters): array
     {
         $range = self::utcRange($from, $to);
-        $where = ['b.created_at >= :from', 'b.created_at < :to', 'b.discount_amount > 0'];
+        $where = ['b.created_at >= :from', 'b.created_at < :to', 'b.discount_amount > 0', "b.status <> 'cancelled'"];
         $params = $range;
         if (($filters['scheme'] ?? '') !== '') {
             $where[] = 'b.discount_type = :scheme';
@@ -441,43 +447,47 @@ final class ReportService
             'discount' => self::money($s['discount']),
             'collected' => self::money($s['collected']),
         ], array_values($schemes));
+        $approvedBy = array_column($rows, 'approved_by');
         return [
             'kpis' => [
-                ['label' => 'Patients helped', 'value' => count($patients)],
-                ['label' => 'Bills', 'value' => count($rows)],
-                ['label' => 'Given up', 'value' => self::money(array_sum(array_column($summary, 'discount'))), 'money' => true],
-                ['label' => 'Still collected', 'value' => self::money(array_sum(array_column($summary, 'collected'))), 'money' => true],
-                ['label' => 'Self-approved', 'value' => count(array_filter($rows, static fn (array $r) => str_starts_with($r['approved_by'], 'Self-approved')))],
+                ['label' => 'Discounted bills', 'value' => count($rows)],
+                ['label' => 'Patients given a discount', 'value' => count($patients)],
+                ['label' => 'Self-approved discounts', 'value' => count(array_filter($approvedBy, static fn (string $a) => str_starts_with($a, 'Self-approved')))],
             ],
-            'summary' => [
-                'title' => 'By scheme',
-                'columns' => [
-                    ['key' => 'scheme', 'label' => 'Scheme'],
-                    ['key' => 'patients', 'label' => 'Patients'],
-                    ['key' => 'bills', 'label' => 'Bills'],
-                    ['key' => 'billed', 'label' => 'Billed', 'money' => true],
-                    ['key' => 'discount', 'label' => 'Given up', 'money' => true],
-                    ['key' => 'collected', 'label' => 'Collected', 'money' => true],
+            'summaries' => [
+                [
+                    'title' => 'Discounts by scheme',
+                    'columns' => [
+                        ['key' => 'scheme', 'label' => 'Scheme'],
+                        ['key' => 'patients', 'label' => 'Patients'],
+                        ['key' => 'bills', 'label' => 'Bills'],
+                        ['key' => 'billed', 'label' => 'Billed', 'money' => true],
+                        ['key' => 'discount', 'label' => 'Given up', 'money' => true],
+                        ['key' => 'collected', 'label' => 'Collected', 'money' => true],
+                    ],
+                    'rows' => $summary,
                 ],
-                'rows' => $summary,
+                [
+                    'title' => 'Discounted bills',
+                    'columns' => [
+                        ['key' => 'date', 'label' => 'Date'],
+                        ['key' => 'bill_no', 'label' => 'Bill'],
+                        ['key' => 'patient', 'label' => 'Patient'],
+                        ['key' => 'reg_no', 'label' => 'File no.'],
+                        ['key' => 'age', 'label' => 'Age'],
+                        ['key' => 'scheme', 'label' => 'Scheme'],
+                        ['key' => 'sponsor', 'label' => 'Sponsor'],
+                        ['key' => 'type', 'label' => 'Category'],
+                        ['key' => 'description', 'label' => 'For'],
+                        ['key' => 'billed', 'label' => 'Billed', 'money' => true],
+                        ['key' => 'discount', 'label' => 'Given up', 'money' => true],
+                        ['key' => 'collected', 'label' => 'Collected', 'money' => true],
+                        ['key' => 'approved_by', 'label' => 'Approved by'],
+                        ['key' => 'status', 'label' => 'Status', 'label_group' => 'billStatus'],
+                    ],
+                    'rows' => $rows,
+                ],
             ],
-            'columns' => [
-                ['key' => 'date', 'label' => 'Date'],
-                ['key' => 'bill_no', 'label' => 'Bill'],
-                ['key' => 'patient', 'label' => 'Patient'],
-                ['key' => 'reg_no', 'label' => 'File no.'],
-                ['key' => 'age', 'label' => 'Age'],
-                ['key' => 'scheme', 'label' => 'Scheme'],
-                ['key' => 'sponsor', 'label' => 'Sponsor'],
-                ['key' => 'type', 'label' => 'Category'],
-                ['key' => 'description', 'label' => 'For'],
-                ['key' => 'billed', 'label' => 'Billed', 'money' => true],
-                ['key' => 'discount', 'label' => 'Given up', 'money' => true],
-                ['key' => 'collected', 'label' => 'Collected', 'money' => true],
-                ['key' => 'approved_by', 'label' => 'Approved by'],
-                ['key' => 'status', 'label' => 'Status', 'label_group' => 'billStatus'],
-            ],
-            'rows' => $rows,
         ];
     }
 
@@ -1485,6 +1495,14 @@ final class ReportService
             fputcsv($out, array_column($report['summary']['columns'], 'label'));
             foreach ($report['summary']['rows'] as $row) {
                 fputcsv($out, array_map(static fn (array $c) => $row[$c['key']] ?? '', $report['summary']['columns']));
+            }
+            fputcsv($out, []);
+        }
+        foreach ($report['summaries'] ?? [] as $extra) {
+            fputcsv($out, [$extra['title']]);
+            fputcsv($out, array_column($extra['columns'], 'label'));
+            foreach ($extra['rows'] as $row) {
+                fputcsv($out, array_map(static fn (array $c) => $row[$c['key']] ?? '', $extra['columns']));
             }
             fputcsv($out, []);
         }

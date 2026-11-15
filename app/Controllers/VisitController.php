@@ -21,6 +21,9 @@ use App\Services\VisitService;
 /** Visits: creation (with its bill), lists and daily summary, detail, cancellation. */
 final class VisitController
 {
+    /** Destinations whose room is chosen at reception, and the administrator's list of rooms for each. */
+    private const ROOM_LISTS = ['doctor_room' => 'consultation_room', 'optometry' => 'optometry_room'];
+
     private const SELECT = 'SELECT v.id, v.visit_no, v.visit_date, v.visit_type, v.sub_type, v.destination, v.room, v.status,
             v.is_emergency, v.is_fast_track, v.fast_track_bill_id, v.fee_exempt, v.patient_age_years, v.created_at, v.row_version,
             p.id AS patient_id, p.reg_no, p.first_name_enc, p.middle_name_enc, p.last_name_enc, p.gender, p.date_of_birth_enc,
@@ -50,7 +53,7 @@ final class VisitController
                 $params[$key] = $value;
             }
         }
-        foreach (['visit_type' => ['consultation', 'follow_up'], 'destination' => ['doctor_room', 'triage', 'investigation'], 'status' => self::STATUSES] as $key => $allowed) {
+        foreach (['visit_type' => ['consultation', 'follow_up'], 'destination' => ['doctor_room', 'triage', 'investigation', 'optometry'], 'status' => self::STATUSES] as $key => $allowed) {
             $value = $request->query($key);
             if (in_array($value, $allowed, true)) {
                 $where[] = "v.$key = :$key";
@@ -100,6 +103,7 @@ final class VisitController
         return [
             'today' => Format::localToday(),
             'rooms' => array_column(Database::all('SELECT value FROM lookup_values WHERE list_code = :l AND is_active = 1 ORDER BY sort_order', ['l' => 'consultation_room']), 'value'),
+            'optometry_rooms' => array_column(Database::all('SELECT value FROM lookup_values WHERE list_code = :l AND is_active = 1 ORDER BY sort_order', ['l' => 'optometry_room']), 'value'),
             'investigations' => array_map(static fn (array $r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'price' => (float) $r['unit_price']], Database::all(
                 "SELECT id, name, unit_price FROM price_items WHERE category = 'investigation' AND is_active = 1 ORDER BY name"
             )),
@@ -287,7 +291,7 @@ final class VisitController
             ->int('patient_id', true, 1)
             ->enum('visit_type', ['consultation', 'follow_up'])
             ->enum('sub_type', ['normal', 'fast_track', 'doctor_follow_up', 'surgery_follow_up'])
-            ->enum('destination', ['doctor_room', 'triage', 'investigation'])
+            ->enum('destination', ['doctor_room', 'triage', 'investigation', 'optometry'])
             ->int('investigation_item_id', false, 1)
             ->bool('fast_track');
         if (!$forQuote) {
@@ -312,10 +316,11 @@ final class VisitController
             $errors['investigation_item_id'] = 'Choose the investigation.';
         }
         if (!$forQuote) {
-            if ($d['destination'] === 'doctor_room') {
-                $rooms = array_column(Database::all('SELECT value FROM lookup_values WHERE list_code = :l AND is_active = 1', ['l' => 'consultation_room']), 'value');
+            // The Doctor Room and Optometry each have their own list of rooms.
+            if (isset(self::ROOM_LISTS[$d['destination']])) {
+                $rooms = array_column(Database::all('SELECT value FROM lookup_values WHERE list_code = :l AND is_active = 1', ['l' => self::ROOM_LISTS[$d['destination']]]), 'value');
                 if (!in_array($d['room'], $rooms, true)) {
-                    $errors['room'] = 'Choose a consultation room.';
+                    $errors['room'] = $d['destination'] === 'optometry' ? 'Choose an optometry room.' : 'Choose a consultation room.';
                 }
             } else {
                 $d['room'] = null;
@@ -337,7 +342,7 @@ final class VisitController
                 if (!Auth::require()->can('visits.emergency')) {
                     throw new HttpException(403, 'forbidden', 'You are not allowed to send patients for treatment before payment.');
                 }
-                if ($d['destination'] === 'investigation') {
+                if (in_array($d['destination'], ['investigation', 'optometry'], true)) {
                     $errors['is_emergency'] = 'Emergencies go to Triage or the Doctor Room.';
                 }
                 if (!$d['emergency_reason']) {

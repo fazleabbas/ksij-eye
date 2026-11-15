@@ -16,7 +16,7 @@ async function rpOpen(type = null) {
   if (!RP.options) {
     RP.options = await KSI.get('reports/options');
     admFillSelect('rp-type', '', RP.options.reports.map(r => [r.type, r.title]));
-    admFillSelect('rp-scheme', 'All schemes', (RP.options.schemes || []).map(s => [s, s]));
+    admFillSelect('rp-scheme', 'All discount schemes', (RP.options.schemes || []).map(s => [s, s]));
     RP.type = RP.options.reports[0]?.type || null;
     document.getElementById('rp-type').value = RP.type || '';
     rpSetDefaultDates();
@@ -58,8 +58,9 @@ function rpShowFilters() {
     admFillSelect('rp-status', 'All statuses', statuses.map(s => [s, uiLabel(rpStatusGroup(), s)]));
     status.dataset.type = RP.type;
   }
-  document.getElementById('rp-scheme').style.display = RP.type === 'waivers' ? '' : 'none';
-  document.getElementById('rp-max-age').style.display = RP.type === 'waivers' ? '' : 'none';
+  // The discount filters narrow the Financial Summary's discount tables.
+  document.getElementById('rp-scheme').style.display = RP.type === 'financial' ? '' : 'none';
+  document.getElementById('rp-max-age').style.display = RP.type === 'financial' ? '' : 'none';
 }
 
 function rpStatusGroup() {
@@ -73,7 +74,7 @@ function rpQuery() {
   const value = id => document.getElementById(id)?.value || '';
   const query = { type: RP.type, from: value('rp-from'), to: value('rp-to'), search: value('rp-search') };
   if (document.getElementById('rp-status').style.display !== 'none') query.status = value('rp-status');
-  if (RP.type === 'waivers') {
+  if (RP.type === 'financial') {
     query.scheme = value('rp-scheme');
     query.max_age = value('rp-max-age');
   }
@@ -145,17 +146,16 @@ function rpRender() {
       <div class="stat-label">${KSI.esc(k.label)}</div>
     </div>`).join('');
 
-  const summary = document.getElementById('rp-summary');
-  summary.innerHTML = report.summary ? `
+  document.getElementById('rp-summary').innerHTML = rpSummaryTables(report).map(table => `
     <div class="card" style="margin-bottom:14px">
-      <div class="card-head"><div class="card-title">${KSI.esc(report.summary.title)}</div></div>
+      <div class="card-head"><div class="card-title">${KSI.esc(table.title)}</div></div>
       <div class="table-wrap">
         <table>
-          <thead><tr>${report.summary.columns.map(c => `<th>${KSI.esc(c.label)}</th>`).join('')}</tr></thead>
-          <tbody>${rpSummaryRows(report.summary)}</tbody>
+          <thead><tr>${table.columns.map(c => `<th>${KSI.esc(c.label)}</th>`).join('')}</tr></thead>
+          <tbody>${table.rows.length ? rpSummaryRows(table) : `<tr><td colspan="${table.columns.length}" class="muted-note">Nothing in this period.</td></tr>`}</tbody>
         </table>
       </div>
-    </div>` : '';
+    </div>`).join('');
 
   document.getElementById('rp-head').innerHTML = rpHeadHtml(report.columns);
   if (!report.rows.length) {
@@ -164,6 +164,11 @@ function rpRender() {
   }
   document.getElementById('rp-body').innerHTML = report.rows.map(row =>
     `<tr>${report.columns.map(c => `<td class="${c.money ? 'money' : ''}">${rpCell(row, c)}</td>`).join('')}</tr>`).join('');
+}
+
+/** The summary panel, then any further tables (the Financial Summary's discounts). */
+function rpSummaryTables(report) {
+  return [...(report.summary ? [report.summary] : []), ...(report.summaries || [])];
 }
 
 /** Summary rows; a row with a level is a total (0, bold) or an item under it (1, indented). */
@@ -191,11 +196,11 @@ function rpPrint() {
       <tr>${report.kpis.map(k => `<th>${KSI.esc(k.label)}</th>`).join('')}</tr>
       <tr>${report.kpis.map(k => `<td>${k.money ? 'TZS ' + KSI.fmtMoney(k.value) : KSI.esc(String(k.value))}</td>`).join('')}</tr>
     </table>
-    ${report.summary ? `<h2>${KSI.esc(report.summary.title)}</h2>
+    ${rpSummaryTables(report).map(table => `<h2>${KSI.esc(table.title)}</h2>
       <table>
-        <thead><tr>${report.summary.columns.map(c => `<th>${KSI.esc(c.label)}</th>`).join('')}</tr></thead>
-        <tbody>${rpSummaryRows(report.summary)}</tbody>
-      </table>` : ''}
+        <thead><tr>${table.columns.map(c => `<th>${KSI.esc(c.label)}</th>`).join('')}</tr></thead>
+        <tbody>${rpSummaryRows(table)}</tbody>
+      </table>`).join('')}
     <h2>Details</h2>
     <table>
       <thead>${rpHeadHtml(report.columns)}</thead>

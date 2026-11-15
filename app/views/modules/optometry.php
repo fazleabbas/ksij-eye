@@ -117,7 +117,7 @@
                 <label class="routing-opt"><input type="checkbox" data-field="refer_optical"><span class="routing-opt-label">Optical Room (spectacles)</span></label>
                 <label class="routing-opt"><input type="checkbox" data-field="refer_ophthalmology"><span class="routing-opt-label">Ophthalmology</span></label>
               </div>
-              <div class="cl-note">Without a referral to Ophthalmology the visit is complete when you finish.</div>
+              <div class="cl-note" id="op-route-note">Without a referral to Ophthalmology the visit is complete when you finish.</div>
             </div>
 
             <div class="audit-strip" id="op-audit"></div>

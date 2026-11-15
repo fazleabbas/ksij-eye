@@ -23,6 +23,7 @@ final class CatalogueController
         'follow_up_reason' => 'Follow-up reasons',
         'drug_frequency' => 'Medication frequencies',
         'consultation_room' => 'Consultation rooms',
+        'optometry_room' => 'Optometry rooms',
         'discount_type' => 'Discount types',
         'kin_relationship' => 'Next-of-kin relationships',
         'diagnostic_laser_type' => 'Laser types',

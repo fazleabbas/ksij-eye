@@ -68,7 +68,8 @@ final class ClinicalService
                     r.status AS record_status,
                     (SELECT MAX(h.changed_at) FROM visit_status_history h WHERE h.visit_id = v.id AND h.to_status IN ($enteredIn)) AS queued_at,
                     EXISTS (SELECT 1 FROM triage_assessments t WHERE t.visit_id = v.id AND t.status = 'completed') AS triaged,
-                    EXISTS (SELECT 1 FROM optometry_assessments o WHERE o.visit_id = v.id AND o.status = 'completed') AS optometry_done
+                    EXISTS (SELECT 1 FROM optometry_assessments o WHERE o.visit_id = v.id AND o.status = 'completed') AS optometry_done,
+                    EXISTS (SELECT 1 FROM ophthalmology_consultations c WHERE c.visit_id = v.id AND c.status = 'completed' AND c.refer_optometry = 1) AS doctor_referred
                FROM visits v
                JOIN patients p ON p.id = v.patient_id
                LEFT JOIN users au ON au.id = v.attending_user_id
@@ -81,7 +82,9 @@ final class ClinicalService
 
         $items = array_map(static function (array $r) use ($stage, $ctx): array {
             $source = 'Reception';
-            if ($stage === 'ophthalmology' && (int) $r['optometry_done'] === 1) {
+            if ($stage === 'optometry' && (int) $r['doctor_referred'] === 1) {
+                $source = 'Doctor';
+            } elseif ($stage === 'ophthalmology' && (int) $r['optometry_done'] === 1) {
                 $source = 'Optometry';
             } elseif ($stage !== 'triage' && (int) $r['triaged'] === 1) {
                 $source = 'Triage';

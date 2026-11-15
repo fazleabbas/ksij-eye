@@ -245,3 +245,9 @@ td .visit-id { white-space: nowrap; }
 /* Screens printed as they are (Administration Reports, Audit Log) carry the credit on paper only. */
 .print-credit { display: none; }
 @media print { .print-credit { display: block; text-align: center; font-size: 10px; color: #999; margin-top: 16px; } }
+
+/* ── Numbered sections of the doctor's consultation (ophthalmology) ── */
+.oph-step { display: flex; align-items: center; gap: 8px; margin: 18px 0 8px; font-size: 13px; font-weight: 700; color: var(--text-1); text-transform: uppercase; letter-spacing: .04em; }
+.oph-step:first-of-type { margin-top: 6px; }
+.oph-step-no { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--teal); color: #fff; font-size: 12px; }
+.oq-source.doctor { background: var(--amber-bg, #FEF3C7); color: #92400E; }

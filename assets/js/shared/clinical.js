@@ -484,10 +484,12 @@ function clOphthalmologyReadout(c) {
   });
   return `<div class="triage-readout">
     <div class="triage-readout-title">Ophthalmology — ${KSI.esc(c.completed_by || '')} · ${KSI.fmtDateTime(c.completed_at)}</div>
+    ${c.clinical_history ? `<div class="hist-field"><div class="hist-field-lbl">Clinical history</div><div class="hist-field-val">${KSI.esc(c.clinical_history)}</div></div>` : ''}
     ${clDxText(c.diagnoses, { provisional: c.provisional_dx_notes, final: c.final_dx_notes })}
     ${abnormal.right.length || abnormal.left.length ? `<div class="hist-field"><div class="hist-field-lbl">Abnormal findings</div><div class="hist-field-val">Right: ${KSI.esc(abnormal.right.join(', ') || '—')}<br>Left: ${KSI.esc(abnormal.left.join(', ') || '—')}</div></div>` : ''}
     ${c.clinical_notes ? `<div class="hist-field"><div class="hist-field-lbl">Clinical notes</div><div class="hist-field-val">${KSI.esc(c.clinical_notes)}</div></div>` : ''}
     ${clRxText(c.prescription)}
+    ${c.refer_optometry ? '<div class="hist-field"><div class="hist-field-lbl">Referral</div><div class="hist-field-val">Referred to Optometry for spectacles</div></div>' : ''}
   </div>`;
 }
 

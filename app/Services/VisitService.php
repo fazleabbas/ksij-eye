@@ -35,6 +35,7 @@ final class VisitService
             'doctor_room' => 'waiting_doctor',
             'triage' => 'waiting_triage',
             'investigation' => 'waiting_investigation',
+            'optometry' => 'waiting_optometry',
         };
     }
 

@@ -48,7 +48,25 @@ const OPTO_FORM = {
     }));
     this.renderExtra();
     clRxSet('op-rx', record?.prescription, locked);
-    document.getElementById('op-upstream').innerHTML = clTriageReadout(ws.upstream.triage);
+    // Sent back by the doctor for spectacles: show why, and the visit ends here (or at Optical).
+    const fromDoctor = ws.upstream.ophthalmology;
+    document.getElementById('op-upstream').innerHTML = (fromDoctor
+      ? `<div class="alert alert-info" style="margin-bottom:10px"><div><strong>Referred by the doctor for spectacles.</strong>
+          ${record?.reopened_at ? `This optometry record was reopened on ${KSI.fmtDateTime(record.reopened_at)} — add or change the refraction and lenses.` : ''}
+          The consultation is complete, so the visit ends at Optometry or the Optical Room.</div></div>`
+        + clOphthalmologyReadout(fromDoctor)
+      : '') + clTriageReadout(ws.upstream.triage);
+    this.doctorReferral = !!fromDoctor;
+  },
+
+  /** After the form mode is applied: a doctor's referral leaves no referral to Ophthalmology to make. */
+  lockDoctorReferral() {
+    const box = this.form().querySelector('[data-field="refer_ophthalmology"]');
+    const note = document.getElementById('op-route-note');
+    if (this.doctorReferral) box.disabled = true;
+    note.textContent = this.doctorReferral
+      ? 'Referred by the doctor: the consultation is complete, so the visit ends when you finish.'
+      : 'Without a referral to Ophthalmology the visit is complete when you finish.';
   },
 
   lensTotal() {
@@ -155,6 +173,7 @@ const OPTO_FORM = {
   },
 
   onPatient(ws) {
+    this.lockDoctorReferral();
     if (this.patientId === ws.visit.patient.id && this.visitId === ws.visit.id) return;
     this.patientId = ws.visit.patient.id;
     this.visitId = ws.visit.id;

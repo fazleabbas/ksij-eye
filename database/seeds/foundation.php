@@ -221,6 +221,7 @@ return static function (PDO $pdo): void {
         'payment_method' => ['Cash', 'Lipa Number'],
         'discount_type' => ['Discount', 'Welfare', 'Complimentary', 'Exemption', 'Invoice Discount', 'Staff Welfare', 'Glaucoma Club', 'Sababa', 'Mnazi Mmoja', 'Debt'],
         'consultation_room' => ['Room 1', 'Room 2', 'Room 3', 'Room 4'],
+        'optometry_room' => ['Optometry Room 1', 'Optometry Room 2'],
         'eye' => ['Right', 'Left', 'Both'],
         'emergency_reason' => ['Severe Eye Pain', 'Endophthalmitis', 'Corneal Ulcer', 'Foreign Body (Eye)', 'Chemical Injury', 'Eye Trauma',
             'Sudden Loss of Vision', 'Acute Glaucoma', 'Other'],

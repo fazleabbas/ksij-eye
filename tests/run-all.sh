@@ -23,4 +23,6 @@ run "fast track browser"  node fast-track-browser.mjs
 run "default dates"       node default-dates-browser.mjs
 run "form errors"         node form-errors-browser.mjs
 run "theatre print"       node theatre-print-browser.mjs
+run "uat round 4 api"     node uat-round4.mjs
+run "uat round 4 browser" node uat-round4-browser.mjs
 run "all screens"         node smoke-modules.mjs

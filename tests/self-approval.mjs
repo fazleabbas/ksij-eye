@@ -64,10 +64,12 @@ check('the audit log says self-approved', sql(
 check('the plain approver\'s request is not marked', (await get(`approvals/${requestA.id}`)).approval.is_self_approved === false);
 
 const today = (await get('reports/options')).today;
-const waivers = (await get('reports/run?' + new URLSearchParams({ type: 'waivers', from: today, to: today }))).report;
-const row = waivers.rows.find(r => r.bill_no === billB.bill_no);
-check('the Discounts report shows it as self-approved', (row?.approved_by || '').startsWith('Self-approved'), row?.approved_by);
-check('and counts self-approvals', waivers.kpis.some(k => k.label === 'Self-approved' && k.value >= 1));
+// Discounts are part of the Financial Summary (the separate Discounts report was removed).
+const financial = (await get('reports/run?' + new URLSearchParams({ type: 'financial', from: today, to: today }))).report;
+const discounted = financial.summaries.find(t => t.title === 'Discounted bills');
+const row = discounted?.rows.find(r => r.bill_no === billB.bill_no);
+check('the Financial Summary discounts show it as self-approved', (row?.approved_by || '').startsWith('Self-approved'), row?.approved_by);
+check('and counts self-approvals', financial.kpis.some(k => k.label === 'Self-approved discounts' && k.value >= 1));
 
 // The plain approver can still decide someone else's request.
 await signIn(plain.username, plain.password);

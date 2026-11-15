@@ -13,6 +13,8 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 |---|---|
 | `uat-round1.mjs` | The corrections the clinic asked for after reviewing the system (API side) |
 | `uat-round1-browser.mjs` | The same corrections, seen on screen |
+| `uat-round4.mjs` | Reception → Optometry, doctor's Clinical History and referral to Optometry (reopening the optometry record), discounts inside the Financial Summary |
+| `uat-round4-browser.mjs` | The same, on screen (form order, rooms, Optometry after a doctor's referral, report tables) |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

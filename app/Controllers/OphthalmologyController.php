@@ -23,7 +23,7 @@ final class OphthalmologyController extends ClinicalStageController
         'size' => null, 'shape' => ['round', 'irregular', 'oval', 'keyhole'], 'light' => ['brisk', 'sluggish', 'non_reactive', 'rapd'],
         'consensual' => ['present', 'absent'],
     ];
-    private const TEXT_LIMITS = ['provisional_dx_notes' => 1000, 'final_dx_notes' => 1000, 'clinical_notes' => 5000];
+    private const TEXT_LIMITS = ['clinical_history' => 5000, 'provisional_dx_notes' => 1000, 'final_dx_notes' => 1000, 'clinical_notes' => 5000];
     private const DIAGRAMS = ['iris', 'cross_section'];
 
     protected function validate(ClinicalInput $in, bool $complete, AuthContext $ctx): array
@@ -39,6 +39,8 @@ final class OphthalmologyController extends ClinicalStageController
             'follow_up' => ClinicalOrders::validateFollowUp($in, $complete),
             'investigations' => ClinicalOrders::validateInvestigations($in, $ctx),
             'surgery' => ClinicalOrders::validateSurgery($in, $ctx),
+            // Back to Optometry for spectacles: the visit goes on to the Optometry queue.
+            'refer_optometry' => $in->bool('refer_optometry'),
         ];
         foreach (self::TEXT_LIMITS as $field => $max) {
             $d[$field] = $in->text($field, $max);
@@ -151,6 +153,10 @@ final class OphthalmologyController extends ClinicalStageController
             'referred_out' => $d['referral']['referred'] ? 1 : 0,
             'referral_facility_enc' => Crypto::encrypt($d['referral']['facility'], 'ophthalmology_consultations.referral_facility'),
         ];
+        // Where the patient goes next is routing: a correction after completion cannot change it.
+        if (!$correction) {
+            $columns['refer_optometry'] = $d['refer_optometry'] ? 1 : 0;
+        }
         foreach ($texts as $field => $text) {
             $columns["{$field}_enc"] = Crypto::encrypt($text, "ophthalmology_consultations.$field");
         }
@@ -225,7 +231,13 @@ final class OphthalmologyController extends ClinicalStageController
         if ($data['referral']['referred']) {
             $parts[] = 'referred to ' . $data['referral']['facility'];
         }
-        return ['completed', 'Ophthalmology consultation complete' . ($parts ? ' (' . implode(', ', $parts) . ')' : '')];
+        $extra = $parts ? ' (' . implode(', ', $parts) . ')' : '';
+        if ($data['refer_optometry']) {
+            $reopened = OptometryController::reopenForDoctor((int) $visit['id'], $ctx->userId);
+            return ['waiting_optometry', "Ophthalmology consultation complete$extra — referred to Optometry for spectacles"
+                . ($reopened ? ' (optometry record reopened)' : '')];
+        }
+        return ['completed', "Ophthalmology consultation complete$extra"];
     }
 
     public static function loadRecord(int $visitId): ?array
@@ -256,6 +268,7 @@ final class OphthalmologyController extends ClinicalStageController
             'investigations' => ClinicalOrders::investigations($id),
             'surgery' => ClinicalOrders::surgery($id),
             'referral' => self::referral($r),
+            'refer_optometry' => (bool) $r['refer_optometry'],
         ];
         foreach (array_keys(self::TEXT_LIMITS) as $field) {
             $record[$field] = Crypto::decrypt($r["{$field}_enc"], "ophthalmology_consultations.$field");

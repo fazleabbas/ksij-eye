@@ -18,32 +18,19 @@
           <form class="ophtho-center-inner" id="oph-form" style="display:none" novalidate onsubmit="event.preventDefault()">
             <div class="patient-banner" id="oph-banner"></div>
             <div id="oph-mode"></div>
+            <div class="oph-step"><span class="oph-step-no">1</span>Clinical History</div>
             <div id="oph-upstream"></div>
+            <div class="clinical-card">
+              <div class="form-group" style="margin:0">
+                <label class="form-label">History</label>
+                <textarea class="clinical-textarea" rows="4" maxlength="5000" data-field="clinical_history" placeholder="Presenting complaint, history of the complaint, past eye, medical and drug history…"></textarea>
+              </div>
+            </div>
 
-            <div class="vitals-card-title" style="margin:6px 0 8px">Examination</div>
+            <div class="oph-step"><span class="oph-step-no">2</span>Examination</div>
             <div id="oph-exam" data-field="findings"></div>
 
             <div class="summary-panel" id="oph-summary"></div>
-
-            <div class="clinical-card">
-              <div class="vitals-card-title">Diagnosis &amp; Notes</div>
-              <div class="clinical-grid">
-                <div class="form-group" style="margin:0">
-                  <label class="form-label">Provisional diagnosis <span class="required">*</span></label>
-                  <div data-collect="skip" id="oph-dx-provisional"></div>
-                  <textarea class="clinical-textarea" rows="2" maxlength="1000" data-field="provisional_dx_notes" placeholder="Free-text notes (optional)" style="margin-top:8px"></textarea>
-                </div>
-                <div class="form-group" style="margin:0">
-                  <label class="form-label">Final diagnosis <span class="required">*</span></label>
-                  <div data-collect="skip" id="oph-dx-final"></div>
-                  <textarea class="clinical-textarea" rows="2" maxlength="1000" data-field="final_dx_notes" placeholder="Free-text notes (optional)" style="margin-top:8px"></textarea>
-                </div>
-                <div class="form-group" style="margin:0;grid-column:1/-1">
-                  <label class="form-label">Clinical notes</label>
-                  <textarea class="clinical-textarea" rows="4" maxlength="5000" data-field="clinical_notes" placeholder="History, observations, plan…"></textarea>
-                </div>
-              </div>
-            </div>
 
             <div class="diagram-section" data-collect="skip">
               <div class="vitals-card-title">Eye Diagrams</div>
@@ -67,11 +54,7 @@
               </div>
             </div>
 
-            <div class="med-orders-card" data-lock="correct">
-              <div class="med-orders-header"><div class="med-orders-title">Prescription</div></div>
-              <div class="med-orders-body" data-collect="skip" id="oph-rx"></div>
-            </div>
-
+            <div class="oph-step"><span class="oph-step-no">3</span>Investigations</div>
             <div class="clinical-card" data-lock="correct" id="oph-inv-card">
               <div class="vitals-card-title" style="display:flex;align-items:center;gap:8px">Investigations
                 <button type="button" class="btn btn-secondary btn-sm" style="margin-left:auto" id="oph-inv-add" onclick="OPH_FORM.addOrder('investigations')">Add investigation</button>
@@ -80,6 +63,33 @@
               <div class="cl-note">Each investigation is billed at the cashier when you complete the consultation.</div>
             </div>
 
+            <div class="oph-step"><span class="oph-step-no">4</span>Provisional and Final Diagnosis</div>
+            <div class="clinical-card">
+              <div class="clinical-grid">
+                <div class="form-group" style="margin:0">
+                  <label class="form-label">Provisional diagnosis <span class="required">*</span></label>
+                  <div data-collect="skip" id="oph-dx-provisional"></div>
+                  <textarea class="clinical-textarea" rows="2" maxlength="1000" data-field="provisional_dx_notes" placeholder="Free-text notes (optional)" style="margin-top:8px"></textarea>
+                </div>
+                <div class="form-group" style="margin:0">
+                  <label class="form-label">Final diagnosis <span class="required">*</span></label>
+                  <div data-collect="skip" id="oph-dx-final"></div>
+                  <textarea class="clinical-textarea" rows="2" maxlength="1000" data-field="final_dx_notes" placeholder="Free-text notes (optional)" style="margin-top:8px"></textarea>
+                </div>
+                <div class="form-group" style="margin:0;grid-column:1/-1">
+                  <label class="form-label">Clinical notes</label>
+                  <textarea class="clinical-textarea" rows="4" maxlength="5000" data-field="clinical_notes" placeholder="Observations, plan…"></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class="oph-step"><span class="oph-step-no">5</span>Medicine</div>
+            <div class="med-orders-card" data-lock="correct">
+              <div class="med-orders-header"><div class="med-orders-title">Prescription</div></div>
+              <div class="med-orders-body" data-collect="skip" id="oph-rx"></div>
+            </div>
+
+            <div class="oph-step"><span class="oph-step-no">6</span>Surgery</div>
             <div class="clinical-card" data-lock="correct" id="oph-surg-card">
               <div class="vitals-card-title" style="display:flex;align-items:center;gap:8px">Surgery Recommendation
                 <button type="button" class="btn btn-secondary btn-sm" style="margin-left:auto" id="oph-surg-add" onclick="OPH_FORM.addOrder('surgery')">Recommend surgery</button>
@@ -96,10 +106,17 @@
               <div class="cl-note">Procedures are booked in Theatre, like surgery.</div>
             </div>
 
-<?php $clPrefix = 'oph'; require __DIR__ . '/partials/clinical-followup.php'; ?>
+            <div class="oph-step"><span class="oph-step-no">7</span>Referral</div>
+            <div class="routing-card" data-lock="correct">
+              <div class="vitals-card-title">Refer to Optometry</div>
+              <div class="routing-options">
+                <label class="routing-opt"><input type="checkbox" data-field="refer_optometry"><span class="routing-opt-label">Optometry (spectacles)</span></label>
+              </div>
+              <div class="cl-note">When you complete the consultation the patient goes to the Optometry queue instead of leaving.</div>
+            </div>
 
             <div class="followup-card">
-              <div class="vitals-card-title">Referral</div>
+              <div class="vitals-card-title">Referral to another facility</div>
               <label class="followup-check-row">
                 <input type="checkbox" data-field="referral.referred" style="width:15px;height:15px;accent-color:var(--teal)" onchange="OPH_FORM.toggleReferral()">
                 <span style="font-size:13px;font-weight:600;color:var(--text-2)">Referred to another facility</span>
@@ -109,6 +126,8 @@
                 <input class="form-input" maxlength="200" data-field="referral.facility" placeholder="Hospital or clinic, e.g. Muhimbili National Hospital">
               </div>
             </div>
+
+<?php $clPrefix = 'oph'; require __DIR__ . '/partials/clinical-followup.php'; ?>
 
             <div class="audit-strip" id="oph-audit"></div>
             <div id="oph-addenda"></div>

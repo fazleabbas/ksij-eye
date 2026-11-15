@@ -49,12 +49,13 @@
           <label class="radio-card"><input type="radio" name="nv-destination" value="doctor_room" onchange="vsOnFormChange()"><div><div class="radio-card-label">Doctor Room</div><div class="radio-card-sub">Straight to consultation</div></div></label>
           <label class="radio-card"><input type="radio" name="nv-destination" value="triage" onchange="vsOnFormChange()"><div><div class="radio-card-label">Triage</div><div class="radio-card-sub">Nurse assessment first</div></div></label>
           <label class="radio-card"><input type="radio" name="nv-destination" value="investigation" onchange="vsOnFormChange()"><div><div class="radio-card-label">Investigation</div><div class="radio-card-sub">Diagnostic test only</div></div></label>
+          <label class="radio-card"><input type="radio" name="nv-destination" value="optometry" onchange="vsOnFormChange()"><div><div class="radio-card-label">Optometry</div><div class="radio-card-sub">Straight to optometry (e.g. children)</div></div></label>
         </div>
       </div>
 
       <div class="form-grid" id="nv-room-group" style="display:none;margin-top:12px">
         <div class="form-group">
-          <label class="form-label" for="nv-room">Consultation Room <span class="required">*</span></label>
+          <label class="form-label" for="nv-room" id="nv-room-label">Consultation Room <span class="required">*</span></label>
           <select class="form-select" id="nv-room" data-field="room"></select>
         </div>
       </div>

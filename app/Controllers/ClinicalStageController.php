@@ -250,8 +250,11 @@ abstract class ClinicalStageController
 
         $label = $def['label'];
         match ($result['action']) {
-            'saved' => Audit::log(static::STAGE, 'record.saved', "Saved $label draft for visit {$result['visit_no']}", 'visit', $result['visit_no']),
-            'completed' => Audit::log(static::STAGE, 'record.completed', "Completed $label for visit {$result['visit_no']} — {$result['note']}", 'visit', $result['visit_no']),
+            // Changed fields are listed too, so changes to a record reopened for the doctor can be traced.
+            'saved' => Audit::log(static::STAGE, 'record.saved', "Saved $label draft for visit {$result['visit_no']}", 'visit', $result['visit_no'],
+                $result['changes'] ? ['fields' => $result['changes']] : null),
+            'completed' => Audit::log(static::STAGE, 'record.completed', "Completed $label for visit {$result['visit_no']} — {$result['note']}", 'visit', $result['visit_no'],
+                $result['changes'] ? ['fields' => $result['changes']] : null),
             'corrected' => Audit::log(static::STAGE, 'record.corrected', "Corrected $label record of visit {$result['visit_no']}", 'visit', $result['visit_no'],
                 $result['changes'] ? ['fields' => $result['changes']] : null),
         };

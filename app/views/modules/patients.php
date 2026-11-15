@@ -35,6 +35,7 @@
               <option value="doctor_room">Doctor Room</option>
               <option value="triage">Triage</option>
               <option value="investigation">Investigation</option>
+              <option value="optometry">Optometry</option>
             </select>
             <select class="filter-select" id="vs-filter-status" onchange="vsFilterChanged()">
               <option value="">All Statuses</option>
