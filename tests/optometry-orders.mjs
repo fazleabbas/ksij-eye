@@ -1,6 +1,6 @@
 // Optometry books investigations and reads their results (new Optometrist role), records
 // cataract biometry, and Theatre starts a new cataract booking from the latest biometry.
-import { signIn, get, post, put, check, equal, expectError, report, sql } from './lib/api.mjs';
+import { signIn, get, post, put, check, equal, expectError, report, sql, payDiagnostic } from './lib/api.mjs';
 
 const admin = await signIn();
 const run = String(Date.now()).slice(-6);
@@ -88,6 +88,7 @@ check('the visit history says so', sql(`SELECT COUNT(*) FROM visit_status_histor
 // ─── The result comes back to the optometrist ─────────────────────────────
 await signIn();
 await post(`diagnostics/bookings/${inv.booking_id}/check-in`, { no_charge: false });
+await payDiagnostic(inv.booking_id);
 await put(`diagnostics/bookings/${inv.booking_id}/report`, { reporting_user_id: admin.id, result: `AL 23.52 confirmed ${run}`, comments: '' });
 await signIn(optometrist.username, optometrist.password);
 check('the optometrist is told the result is ready', (await get('clinical/results/unseen')).results.some(r => r.booking_id === inv.booking_id && r.mine));

@@ -1,7 +1,7 @@
 // Test results for doctors (from the consultation, patient history and the bell), and the fuller
 // patient history: tests from any source, theatre, medicines handed over, spectacle orders.
 // Results and theatre notes: doctors and admin only; others see the status.
-import { signIn, get, post, put, call, upload, check, equal, expectError, report, sql } from './lib/api.mjs';
+import { signIn, get, post, put, call, upload, check, equal, expectError, report, sql, payDiagnostic } from './lib/api.mjs';
 
 const admin = await signIn();
 const run = String(Date.now()).slice(-6);
@@ -41,6 +41,7 @@ async function pay(visitNo) {
 }
 async function reportTest(bookingId, text) {
   await post(`diagnostics/bookings/${bookingId}/check-in`, { no_charge: false });
+  await payDiagnostic(bookingId);
   await put(`diagnostics/bookings/${bookingId}/report`, { reporting_user_id: admin.id, result: text, comments: 'Repeat in 6 months' });
 }
 const options = await get('clinical/options');

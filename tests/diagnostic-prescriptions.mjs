@@ -1,7 +1,7 @@
 // A diagnostic report can prescribe medicine. It is sent to the pharmacy with the report and
 // goes the usual road: pharmacy review, bill at today's price, cashier, hand over.
 // While the report is still correctable, medicine can be added if none was sent; only once.
-import { signIn, get, post, put, check, equal, expectError, report, sql } from './lib/api.mjs';
+import { signIn, get, post, put, check, equal, expectError, report, sql, payDiagnostic } from './lib/api.mjs';
 
 const me = await signIn();
 const run = String(Date.now()).slice(-6);
@@ -21,6 +21,7 @@ async function newBooking() {
     patient_id: patient.id, referring_user_id: me.id, eye: 'right', timing: 'now', procedures: [{ price_item_id: investigation.id }],
   })).bookings[0];
   await post(`diagnostics/bookings/${booking.id}/check-in`, { no_charge: false });
+  await payDiagnostic(booking.id);
   return booking;
 }
 

@@ -1,8 +1,9 @@
 'use strict';
 // ─── DIAGNOSTICS ──────────────────────────────────────────────────────────
 // Booking desk, reporting queue and history. A booking carries no charge:
-// the bill is raised when the patient arrives, and the test is never blocked
-// by payment. Cancellations and "no charge" are decided in Approvals.
+// the bill is raised when the patient arrives, and the report is written only once
+// the test is paid for (or approved as "No charge"). Cancellations and "no charge"
+// are decided in Approvals.
 
 const DIAG = {
   options: null,
@@ -15,7 +16,6 @@ const DIAG = {
   procedures: [],       // [{price_item_id, remark, laser_type_ids, laser_subtype_ids}]
   cancelTarget: null,
   checkInTarget: null,
-  pendingReport: null,  // report saved while the test had no bill
   meds: [],             // medicine lines on the open report, sent to the pharmacy on save
 };
 
@@ -479,8 +479,17 @@ function diagRenderQueue() {
         ${diagStatusBadge(b.status)}
         <span>${KSI.fmtDateTime(b.scheduled_for)}</span>
       </div>
-      ${b.bill ? '' : '<div class="muted-note">Not charged yet</div>'}
+      ${diagPaymentNote(b) ? `<div class="muted-note" style="color:#B45309;font-weight:600">${KSI.esc(diagPaymentNote(b).short)}</div>` : ''}
     </div>`).join('');
+}
+
+/** Why a report cannot be written yet (null when the test is paid for or approved as No charge). */
+function diagPaymentNote(booking) {
+  const status = booking.bill?.status;
+  if (['paid', 'exempted'].includes(status)) return null;
+  if (!booking.bill) return { short: 'Not checked in — not paid', long: 'The patient has not been checked in. Check them in at the Diagnostic Booking desk and take payment at the cashier; the report can be written once the test is paid for.' };
+  if (status === 'discount_requested') return { short: 'No charge — waiting for approval', long: 'The "No charge" request is waiting for approval. The report can be written once it is approved.' };
+  return { short: 'Waiting for payment', long: `Bill ${booking.bill.bill_no || ''} is not paid yet. The patient pays at the cashier before the report is written.` };
 }
 
 async function diagSelectCase(id) {
@@ -540,6 +549,12 @@ function diagRenderReportPanel() {
         <div>${KSI.esc(b.remark)}</div>
       </div>` : ''}
 
+      ${!report && diagPaymentNote(b) ? `<div class="alert alert-warning" style="display:block;margin-top:12px">
+        <strong>Waiting for payment.</strong> ${KSI.esc(diagPaymentNote(b).long)}
+        <div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="diagSelectCase(${b.id})">Check again</button></div>
+      </div>
+      <div class="modal-footer" style="padding:16px 0 0"><button class="btn btn-secondary" onclick="diagClearCase()">Close</button></div>
+    </div>` : `
       ${readOnly ? `<div class="cl-lock-note">This report can no longer be changed. Add an addendum if something needs to be said.</div>` : ''}
       ${report && !readOnly ? `<div class="cl-note">Report submitted. You can still attach scans and make changes until
         ${KSI.esc(KSI.fmtDateTime(report.correctable_until))}; each change is kept as a correction.</div>` : ''}
@@ -579,7 +594,8 @@ function diagRenderReportPanel() {
         ${!readOnly && KSI.can('diagnostics.report.record')
           ? `<button class="btn btn-primary" onclick="diagSaveReport(this)">${report ? 'Save' : 'Submit report'}</button>` : ''}
       </div>
-    </div>`;
+    </div>`}`;
+  if (!document.getElementById('diag-rep-doctor')) return;   // waiting for payment: no form
 
   admFillSelect('diag-rep-technician', 'Not recorded', technicians.map(t => [t.id, t.name]));
   admFillSelect('diag-rep-doctor', 'Select the reporting doctor', doctors.map(d => [d.id, d.name]));
@@ -705,31 +721,12 @@ async function diagSaveReport(button) {
       DIAG.meds = [];
       const rx = saved.booking.report?.prescription_no;
       showToast('Report saved', `${saved.booking.booking_no} has been reported.${payload.medicines.length && rx ? ` Medicine sent to the pharmacy (${rx}).` : ''}`, 'success');
-      if (saved.unbilled) diagOpenUnbilled(saved.booking);
       await diagLoadQueue();
       diagRenderReportPanel();
     } catch (error) {
       KSI.reportError(error, panel, 'Could not save the report');
     }
   });
-}
-
-/** The test was done without the desk checking the patient in: settle the charge now. */
-async function diagOpenUnbilled(booking) {
-  await diagOptions();
-  DIAG.checkInTarget = booking;
-  const modal = document.getElementById('modal-diag-checkin');
-  KSI.clearFieldErrors(modal);
-  document.getElementById('diag-checkin-info').innerHTML = `
-    <div><strong>${KSI.esc(booking.patient.full_name)}</strong> · ${KSI.esc(booking.patient.reg_no)}</div>
-    <div class="muted-note">${KSI.esc(booking.procedure.name)} · ${KSI.esc(booking.booking_no)}</div>
-    <div class="alert alert-warning" style="margin-top:8px">This test has been reported but was never charged.</div>`;
-  document.getElementById('diag-checkin-amount').textContent = `TZS ${KSI.fmtMoney(booking.procedure.unit_price)}`;
-  admFillSelect('diag-checkin-reason', 'Select a reason', DIAG.options.no_charge_reasons.map(r => [r.label, r.label]));
-  document.getElementById('diag-checkin-remarks').value = '';
-  uiSetRadio('diag-checkin-mode', 'bill');
-  diagCheckInModeChanged();
-  openModal('modal-diag-checkin');
 }
 
 async function diagUploadFile(bookingId, input) {

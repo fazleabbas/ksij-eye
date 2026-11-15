@@ -1,5 +1,5 @@
 // UAT round 3: the clinic's answers to our questions (stuffs/uat/HMS ANSWERS.docx).
-import { signIn, get, post, put, check, equal, expectError, report, sql } from './lib/api.mjs';
+import { signIn, get, post, put, check, equal, expectError, report, sql, payDiagnostic } from './lib/api.mjs';
 
 const me = await signIn();
 const run = String(Date.now()).slice(-6);
@@ -41,6 +41,7 @@ equal('two separate bills at the cashier', allBills.length, 2);
 await post(`bills/${visitBills[0].id}/pay`, { method: 'cash', row_version: visitBills[0].row_version });
 equal('once paid, the visit waits for the investigation',
   sql(`SELECT status FROM visits WHERE id = ${visit.id}`), 'waiting_investigation');
+await payDiagnostic(bookingId);
 await put(`diagnostics/bookings/${bookingId}/report`, { reporting_user_id: me.id, result: 'Cup-disc ratio 0.6 left.', comments: '' });
 equal('reporting the test ends the visit', sql(`SELECT status FROM visits WHERE id = ${visit.id}`), 'completed');
 

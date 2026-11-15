@@ -20,6 +20,8 @@ use App\Core\Sequence;
 final class DiagnosticService
 {
     public const STATUSES = ['scheduled', 'arrived', 'completed', 'cancellation_requested', 'cancelled'];
+    /** Bill states that let the report be written: paid, or exempted ("No charge" approved, or a free test). */
+    public const SETTLED_BILL = ['paid', 'exempted'];
 
     /** Bookings still on the desk's working list. */
     public const OPEN_STATUSES = ['scheduled', 'arrived', 'cancellation_requested'];
@@ -439,6 +441,7 @@ final class DiagnosticService
             $comments = ($data['comments'] ?? '') === '' ? null : Crypto::encrypt((string) $data['comments'], 'diagnostic_results.comments');
 
             if ($existing === null) {
+                self::assertSettled($booking);
                 $resultId = Database::insert(
                     'INSERT INTO diagnostic_results (booking_id, patient_id, technician_user_id, reporting_user_id, result_enc, comments_enc,
                                                      completed_at, completed_by)
@@ -492,6 +495,24 @@ final class DiagnosticService
                 $prescriptionNo = Database::value('SELECT prescription_no FROM prescriptions WHERE id = :id', ['id' => $prescriptionId]);
             }
             return ['result_id' => $resultId, 'created' => $existing === null, 'prescription_no' => $prescriptionNo];
+        });
+    }
+
+    /**
+     * A report is written only once the test is paid for, or approved as "No charge" (a free
+     * test's bill is exempted when it is raised). Corrections to a written report are not affected.
+     */
+    private static function assertSettled(array $booking): void
+    {
+        $status = $booking['bill_id'] === null ? null
+            : Database::value('SELECT status FROM bills WHERE id = :id', ['id' => (int) $booking['bill_id']]);
+        if (in_array($status, self::SETTLED_BILL, true)) {
+            return;
+        }
+        throw HttpException::conflict('unpaid', match ($status) {
+            null => 'The patient has not been checked in. Check them in and take payment before writing the report.',
+            'discount_requested' => 'The "No charge" request is waiting for approval. The report can be written once it is approved.',
+            default => 'This test has not been paid for. The patient pays at the cashier before the report is written.',
         });
     }
 

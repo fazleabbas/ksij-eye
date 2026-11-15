@@ -95,3 +95,11 @@ export function report(label) {
   console.log(`${passed}/${passed + failures.length} passed${label ? ' · ' + label : ''}`);
   process.exit(failures.length ? 1 : 0);
 }
+
+/** Pays a checked-in diagnostic test's bill at the cashier (a report needs it paid first). */
+export async function payDiagnostic(bookingId) {
+  const billId = sql(`SELECT bill_id FROM diagnostic_bookings WHERE id = ${Number(bookingId)}`);
+  if (!billId || billId === 'NULL') throw new Error(`diagnostic booking ${bookingId} has no bill — check it in first`);
+  if (sql(`SELECT status FROM bills WHERE id = ${billId}`) !== 'pending') return;
+  await post(`bills/${billId}/pay`, { method: 'cash', row_version: Number(sql(`SELECT row_version FROM bills WHERE id = ${billId}`)) });
+}

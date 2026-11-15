@@ -42,6 +42,7 @@ await api.post(`ophthalmology/visits/${visit.id}/complete`, {
 const bookingId = (await api.get(`ophthalmology/visits/${visit.id}`)).record.investigations[0].booking_id;
 await api.signIn();
 await api.post(`diagnostics/bookings/${bookingId}/check-in`, { no_charge: false });
+await api.payDiagnostic(bookingId);
 await api.put(`diagnostics/bookings/${bookingId}/report`, { reporting_user_id: admin.id, result: `Superior arcuate defect ${run}`, comments: 'Correlate with OCT' });
 // A theatre case with an operation, and a medicine handed over.
 const surgeryItem = options.surgery_items.find(i => i.category === 'surgery');

@@ -18,6 +18,7 @@ const booking = (await api.post('diagnostics/bookings', {
   patient_id: patient.id, referring_user_id: me.id, eye: 'left', timing: 'now', procedures: [{ price_item_id: investigation.id }],
 })).bookings[0];
 await api.post(`diagnostics/bookings/${booking.id}/check-in`, { no_charge: false });
+await api.payDiagnostic(booking.id);
 
 await launch(9512);
 await signIn();

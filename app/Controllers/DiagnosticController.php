@@ -207,7 +207,7 @@ final class DiagnosticController
                 "Sent medicine for {$booking['booking_no']} to the pharmacy ({$saved['prescription_no']})",
                 'diagnostic_booking', $booking['booking_no']);
         }
-        return ['booking' => $booking, 'unbilled' => $booking['bill'] === null];
+        return ['booking' => $booking];
     }
 
     public function addAddendum(Request $request, array $params): array

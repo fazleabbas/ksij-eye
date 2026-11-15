@@ -1,5 +1,5 @@
 // The corrections the clinic asked for after reviewing the system (UAT round 1).
-import { signIn, get, post, put, del, upload, check, equal, expectError, report, sql } from './lib/api.mjs';
+import { signIn, get, post, put, del, upload, check, equal, expectError, report, sql, payDiagnostic } from './lib/api.mjs';
 
 const me = await signIn();
 // Re-runnable without a database reset: everything this suite creates carries a run tag.
@@ -82,6 +82,7 @@ const booking = (await post('diagnostics/bookings', {
   procedures: [{ price_item_id: investigation.id }],
 })).bookings[0];
 await post(`diagnostics/bookings/${booking.id}/check-in`, { no_charge: false });
+await payDiagnostic(booking.id);
 await put(`diagnostics/bookings/${booking.id}/report`, {
   reporting_user_id: me.id, result: 'Normal study.', comments: '',
 });
