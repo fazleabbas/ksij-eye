@@ -73,9 +73,11 @@ await evaluate(`(() => {
   document.getElementById('th-patient-card').innerHTML = uiPatientCard(TH.patient);
   document.getElementById('th-surgery').value = '${cataractId}';
   thSurgeryChanged();
-  uiSetRadio('th-eye', 'right');
-  document.querySelector('input[name="th-eye"][value="right"]').dispatchEvent(new Event('change'));
 })()`);
+await waitUntil(`document.getElementById('th-bio-source').textContent.includes('Choose the eye')`, 10000, 'eye prompt').catch(() => {});
+const prompt = await evaluate(`document.getElementById('th-bio-source').textContent`);
+check('before the eye is chosen, it says which eyes have biometry and asks for the eye', prompt.includes('Right eye') && prompt.includes('Choose the eye'), prompt);
+await evaluate(`document.querySelector('input[name="th-eye"][value="right"]').closest('label').click()`);
 await waitUntil(`document.getElementById('th-bio-axial').value !== ''`, 10000, 'biometry filled').catch(() => {});
 const filled = await evaluate(`({ al: document.getElementById('th-bio-axial').value, k: document.getElementById('th-bio-steep').value,
   model: document.getElementById('th-bio-model').value, power: document.getElementById('th-bio-power').value, note: document.getElementById('th-bio-source').textContent })`);

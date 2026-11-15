@@ -348,7 +348,7 @@ async function thAutoBiometry() {
   const patientId = TH.patient?.id;
   const eye = uiRadioValue('th-eye');
   // Editing keeps the booking's own figures.
-  if (TH.editing || !TH.biometryNeeded || !patientId || !eye) {
+  if (TH.editing || !TH.biometryNeeded || !patientId) {
     note.style.display = 'none';
     return;
   }
@@ -357,7 +357,8 @@ async function thAutoBiometry() {
       const { biometry } = await KSI.get(`theatre/patients/${patientId}/biometry`);
       TH.bioCache = { patientId, biometry };
     } catch (error) {
-      note.style.display = 'none';
+      note.style.display = '';
+      note.innerHTML = `<div>Could not look up the biometry from Optometry: ${KSI.esc(error.message)}</div>`;
       return;
     }
   }
@@ -365,9 +366,17 @@ async function thAutoBiometry() {
   if (TH.patient?.id !== patientId || uiRadioValue('th-eye') !== eye || !TH.biometryNeeded) return;
   const data = TH.bioCache.biometry;
   const source = b => `Optometry, visit ${KSI.esc(b.visit_no)}, ${KSI.fmtDate(b.recorded_at)}${b.recorded_by ? ` by ${KSI.esc(b.recorded_by)}` : ''}`;
+  note.style.display = '';
+  // No eye yet: say what Optometry has, so it is clear choosing the eye fills it in.
+  if (!eye) {
+    const recorded = [['right', 'Right'], ['left', 'Left']].filter(([e]) => data[e]).map(([e, label]) => `${label} eye (${KSI.fmtDate(data[e].recorded_at)})`);
+    note.innerHTML = recorded.length
+      ? `<div><strong>Optometry has biometry for: ${recorded.join(', ')}.</strong> Choose the eye above to fill it in.</div>`
+      : '<div>No biometry has been recorded in Optometry for this patient. Enter it here.</div>';
+    return;
+  }
   const summary = b => [b.axial_length != null && `AL ${b.axial_length}`, b.steep_k != null && `K1 ${b.steep_k}`, b.flat_k != null && `K2 ${b.flat_k}`,
     b.iol_model && `IOL ${KSI.esc(b.iol_model)}`, b.iol_power != null && `${b.iol_power} D`].filter(Boolean).join(' · ');
-  note.style.display = '';
   if (eye === 'both') {
     thFillBiometry(null);
     note.innerHTML = `<div><strong>Both eyes:</strong> enter the figures for this operation. From Optometry —
