@@ -1,0 +1,33 @@
+# KSI Eye Centre HMS — web root access policy.
+# Whitelist: only the app shell (index.php), the API front controller and
+# static assets are reachable. Everything else (app code, views, config,
+# database scripts, storage, the original prototype) is refused.
+
+Options -Indexes -MultiViews
+DirectoryIndex index.php
+ServerSignature Off
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "same-origin"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Header always unset X-Powered-By
+    Header unset X-Powered-By
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteRule ^(index\.php)?$ - [L]
+    RewriteRule ^api/index\.php$ - [L]
+    RewriteRule ^api/ api/index.php [L]
+    RewriteRule ^assets/(css|js|img)/[A-Za-z0-9/_.-]+\.(css|js|jpg|jpeg|png|svg|webp)$ - [L]
+
+    RewriteRule ^ - [F]
+</IfModule>
+
+# Fail closed if mod_rewrite is ever unavailable.
+<IfModule !mod_rewrite.c>
+    Require all denied
+</IfModule>

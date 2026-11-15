@@ -1,0 +1,20 @@
+# Secrets and runtime data never belong in the repo.
+# (Keys and DB credentials live outside the web root in C:\xampp82\ksij_eye_private.)
+.env
+*.key
+/storage/
+/private/
+*.log
+
+# Tooling
+node_modules/
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+
+# Local-only material (not deployed)
+/stuffs/
+/tests/admin-pass.txt
+/tests/shots/
+/.claude/settings.local.json

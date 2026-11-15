@@ -1,0 +1,223 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   KSI Eye HMS — responsive layer (loaded after app.css)
+   Desktop (> 1280px) is untouched. Breakpoints:
+     ≤ 1280px  small laptop   — narrower side panels
+     ≤ 1024px  tablet         — sidebar becomes an off-canvas drawer, 3-panel → 2-panel
+     ≤  768px  tablet portrait— every split layout stacks, dense grids halve
+     ≤  560px  phone          — single column forms, full-screen modals
+   ═══════════════════════════════════════════════════════════════════════ */
+
+#sidebar-backdrop { display: none; }
+
+@supports (height: 100dvh) {
+  body { height: 100dvh; }
+}
+
+/* ─── ≤ 1280px ──────────────────────────────────────────────────────── */
+@media (max-width: 1280px) {
+  .opto-layout                  { grid-template-columns: 220px minmax(0,1fr) var(--hist-w, 260px); }
+  .opto-layout.hist-collapsed   { grid-template-columns: 220px minmax(0,1fr) 36px; }
+  .ophtho-layout                { grid-template-columns: 230px minmax(0,1fr) 260px; }
+  .ophtho-layout.right-collapsed{ grid-template-columns: 230px minmax(0,1fr) 36px; }
+
+  .pay-queue-grid,
+  .appr-queue-grid              { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .disp-options                 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+
+  /* Date filters inside narrow queue panels */
+  .tq-header input[type="date"],
+  .ophtho-left-header input[type="date"],
+  .po-left-header input[type="date"],
+  .diag-report-left-header input[type="date"] { min-width: 0; width: 100%; }
+}
+
+/* ─── ≤ 1024px : drawer navigation ──────────────────────────────────── */
+@media (max-width: 1024px) {
+  #sidebar,
+  #sidebar.collapsed {
+    position: fixed;
+    top: var(--topnav-h); left: 0; bottom: 0;
+    height: auto;
+    width: min(var(--sidebar-w), 85vw);
+    transform: translateX(-100%);
+    transition: transform .22s ease;
+    z-index: 900;
+    box-shadow: var(--shadow-lg);
+  }
+  body.sidebar-open #sidebar { transform: none; }
+
+  #sidebar-backdrop {
+    display: block;
+    position: fixed; inset: var(--topnav-h) 0 0 0;
+    background: rgba(8, 15, 26, .45);
+    z-index: 890;
+    opacity: 0; pointer-events: none;
+    transition: opacity .2s;
+  }
+  body.sidebar-open #sidebar-backdrop { opacity: 1; pointer-events: auto; }
+
+  /* Compact top bar */
+  #topnav-brand .brand-sub { display: none; }
+  #topnav-right .nav-pill:first-child { display: none; }         /* long date */
+  .user-chip-name, .user-chip-role { white-space: nowrap; }
+
+  /* Bigger touch targets in the drawer */
+  .nav-group-header { padding-top: 11px; padding-bottom: 11px; }
+  .nav-child        { padding-top: 10px; padding-bottom: 10px; font-size: 13px; }
+
+  /* Split layouts: let #main scroll the page, keep the queue pinned beside the form */
+  .triage-layout,
+  .po-layout,
+  .diag-report-layout,
+  .inv-result-layout            { grid-template-columns: 250px minmax(0,1fr); }
+
+  .opto-layout, .opto-layout.hist-collapsed,
+  .ophtho-layout, .ophtho-layout.right-collapsed {
+    grid-template-columns: 240px minmax(0,1fr);
+    height: auto;
+    min-height: calc(100vh - var(--topnav-h));
+    overflow: visible;
+  }
+  .opto-layout > :nth-child(1),
+  .ophtho-layout > :nth-child(1) {
+    position: sticky; top: 0; align-self: start;
+    height: calc(100vh - var(--topnav-h));
+  }
+  .opto-layout > :nth-child(2),
+  .ophtho-layout > :nth-child(2) { overflow: visible; }
+  .opto-layout > :nth-child(3),
+  .ophtho-layout > :nth-child(3) {
+    grid-column: 1 / -1;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    min-height: 320px;
+  }
+
+  .tb-patient-panel-grid,
+  .po-bio-grid,
+  .triage-readout-grid,
+  .disp-options                 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+
+  .opt-modal-box, .tb-modal-box, .thist-detail-box,
+  .diag-modal-box, .inv-modal-box { width: 100%; max-width: calc(100vw - 24px); }
+}
+
+/* ─── ≤ 768px : stack everything ────────────────────────────────────── */
+@media (max-width: 768px) {
+  :root { --topnav-h: 56px; }
+
+  #topnav { padding-right: 10px; }
+  #topnav-brand .brand-sub { display: none; }
+  #topnav-right .nav-pill:first-child { display: none; }         /* long date */
+  #notif-dropdown, .user-dropdown { right: 8px; width: min(300px, calc(100vw - 16px)); }
+
+  .page-header                  { padding: 16px 16px 0; }
+  .page-actions                 { flex-wrap: wrap; }
+  .stats-strip                  { padding: 12px 16px 0; }
+  .pay-queue-grid,
+  .appr-queue-grid              { padding: 12px 16px 0; }
+  .opt-page, .inv-page,
+  .pharm-page, .stores-page     { padding: 16px; }
+  .case-view-inner              { padding: 16px; }
+  .triage-form-inner,
+  .opto-center-inner            { padding: 14px; }
+  .po-form-wrap, .pop-form-wrap { padding: 16px; }
+
+  /* All split layouts become one column; the queue sits on top with its own scroll */
+  .triage-layout, .po-layout, .diag-report-layout, .inv-result-layout,
+  .opt-create-layout, .pop-detail-layout,
+  .opto-layout, .opto-layout.hist-collapsed,
+  .ophtho-layout, .ophtho-layout.right-collapsed {
+    grid-template-columns: minmax(0,1fr) !important;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+  .triage-layout > :first-child, .po-layout > :first-child,
+  .diag-report-layout > :first-child, .inv-result-layout > :first-child,
+  .pop-detail-layout > :first-child,
+  .opto-layout > :nth-child(1), .ophtho-layout > :nth-child(1) {
+    position: static;
+    height: auto;
+    max-height: 45vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .triage-layout > :nth-child(n+2), .po-layout > :nth-child(n+2),
+  .diag-report-layout > :nth-child(n+2), .inv-result-layout > :nth-child(n+2),
+  .opt-create-layout > *, .pop-detail-layout > :nth-child(n+2) { overflow: visible; }
+
+  /* Dense grids halve */
+  .form-grid-3, .patient-card-details, .vitals-grid, .followup-fields,
+  .opt-info-grid-3, .inv-req-grid-3, .inv-info-row-3, .pharm-info-grid.col3,
+  .po-readonly-grid, .io-readonly-row, .thist-ro-grid, .th-tl-card-grid,
+  .tb-proc-grid, .tb-bio-grid, .diag-proc-grid, .findings-grid,
+  .proc-selector-grid, .case-info-grid  { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .form-group.col-3 { grid-column: 1 / -1; }
+
+  .opt-detail-layout, .doc-exam .draw-grid { grid-template-columns: minmax(0,1fr); }
+  .dispatch-balance-row { grid-template-columns: 2fr 1fr 1fr; }
+  .dispatch-balance-row > :nth-child(n+4) { grid-column: 1 / -1; }
+
+  /* Inline-styled grids from views and JS-rendered HTML */
+  [style*="grid-template-columns:1fr 1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr 1fr"],
+  [style*="grid-template-columns:repeat(3"],
+  [style*="grid-template-columns:repeat(4"],
+  [style*="grid-template-columns:2fr 1fr 1fr 1fr"] { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  [style*="grid-template-columns:340px"]           { grid-template-columns: minmax(0,1fr) !important; }
+
+  .filters-bar .search-wrap { max-width: none; flex: 1 1 100%; }
+  .table-footer { flex-wrap: wrap; gap: 8px; }
+  .step-indicator { overflow-x: auto; }
+  .tab-bar { overflow-x: auto; }
+}
+
+/* ─── ≤ 560px : phone ───────────────────────────────────────────────── */
+@media (max-width: 560px) {
+  #topnav-brand .brand-text { display: none; }
+  #topnav-brand .brand-logo { height: 26px; }
+  #topnav-right .nav-pill { display: none; }
+  .user-chip-info { display: none; }
+  .user-chip { padding-right: 6px; }
+
+  .page-title { font-size: 18px; }
+  .page-actions { width: 100%; }
+  .page-actions .btn { flex: 1 1 auto; justify-content: center; }
+
+  .form-grid, .form-grid-3, .detail-grid, .patient-card-details, .vitals-grid, .vitals-grid-2,
+  .emg-fields, .route-options, .clinical-grid, .followup-fields, .disp-form-grid, .fu-form-grid,
+  .pp-grid, .opt-info-grid, .opt-info-grid-3, .inv-req-grid, .inv-req-grid-3, .inv-info-row,
+  .inv-info-row-3, .pharm-review-grid, .pharm-info-grid, .pharm-info-grid.col3,
+  .diag-patient-panel-grid, .po-readonly-grid, .io-readonly-row, .thist-ro-grid, .case-info-grid,
+  .tb-bio-grid, .po-bio-grid, .tb-patient-panel-grid { grid-template-columns: minmax(0,1fr); }
+  .form-group.col-2, .form-group.col-3 { grid-column: 1 / -1; }
+
+  .pay-queue-grid, .appr-queue-grid, .triage-readout-grid,
+  .tb-proc-grid, .diag-proc-grid, .findings-grid, .proc-selector-grid, .disp-options,
+  .th-tl-card-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+
+  [style*="grid-template-columns:1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns:2fr 1fr"] { grid-template-columns: minmax(0,1fr) !important; }
+
+  .stat-card { min-width: calc(50% - 6px); }
+  .filter-select, .filters-bar .form-input { flex: 1 1 140px; min-width: 0; }
+
+  /* Modals fill the screen */
+  .modal-overlay { padding: 0; align-items: stretch; }
+  .modal, .modal-lg, .modal-xl { max-width: 100%; max-height: 100dvh; height: 100%; border-radius: 0; }
+  .modal-header, .modal-body, .modal-footer { padding-left: 16px; padding-right: 16px; }
+  .modal-footer { flex-wrap: wrap; gap: 8px; }
+  .opt-modal-box, .tb-modal-box, .thist-detail-box, .diag-modal-box, .inv-modal-box,
+  .po-confirm-box, .io-confirm-box, .pop-discharge-box, .diag-cancel-modal-box, .tb-cancel-modal-box {
+    max-width: calc(100vw - 16px);
+  }
+
+  #toast-container { left: 12px; right: 12px; top: calc(var(--topnav-h) + 8px); }
+  .toast { width: 100%; }
+
+  .login-card { padding: 28px 20px 24px; }
+  .login-hero { margin-bottom: 16px; }
+  .radio-card { min-width: 0; flex-basis: 100%; }
+}

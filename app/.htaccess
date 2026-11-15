@@ -1,0 +1,2 @@
+# Application code and views are never served directly.
+Require all denied
