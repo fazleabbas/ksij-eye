@@ -23,6 +23,7 @@ final class PharmacyService
     public const OPEN_STATUSES = ['pending_review', 'awaiting_payment', 'paid', 'partially_dispensed'];
 
     private const ORDER_SELECT = "SELECT o.id, o.order_no, o.source, o.status, o.total_amount, o.refill_count, o.prescription_id,
+                o.refill_of_order_id, ro.order_no AS refill_of_no,
                 o.patient_id, o.walkin_id, o.visit_id, o.bill_id, o.reviewed_at, o.completed_at, o.cancelled_at,
                 o.cancel_reason_enc, o.created_at, o.row_version, o.refund_id,
                 o.balance_closed_at, o.balance_close_reason_enc,
@@ -45,7 +46,8 @@ final class PharmacyService
            LEFT JOIN pharmacy_walkins w ON w.id = o.walkin_id
            LEFT JOIN visits v ON v.id = o.visit_id
            LEFT JOIN bills b ON b.id = o.bill_id
-           LEFT JOIN prescriptions pr ON pr.id = o.prescription_id
+           LEFT JOIN pharmacy_orders ro ON ro.id = o.refill_of_order_id
+           LEFT JOIN prescriptions pr ON pr.id = COALESCE(o.prescription_id, ro.prescription_id)
            LEFT JOIN users iu ON iu.id = pr.issued_by
            LEFT JOIN users au ON au.id = pr.amended_by
            LEFT JOIN users ru ON ru.id = o.reviewed_by
@@ -290,6 +292,7 @@ final class PharmacyService
             'status' => $r['status'],
             'total_amount' => (float) $r['total_amount'],
             'refill_count' => (int) $r['refill_count'],
+            'refill_of' => $r['refill_of_no'],
             'prescription_no' => $r['prescription_no'],
             'prescribed_by' => $r['prescribed_by'] ?: null,
             'pharmacy_instructions' => Crypto::decrypt($r['pharmacy_instructions_enc'], 'prescriptions.pharmacy_instructions'),
@@ -502,10 +505,8 @@ final class PharmacyService
         return Database::transaction(function () use ($id, $lines, $notes, $refill, $ctx): array {
             $order = self::lock($id);
             if ($refill) {
-                if ($order['status'] !== 'completed') {
-                    throw HttpException::conflict('order_state', 'Only a completed order can be refilled.');
-                }
-                Database::execute('UPDATE pharmacy_order_items SET dispensed_qty = 0 WHERE order_id = :o', ['o' => $id]);
+                // Refills are paid for now: they are raised as their own order and bill (createRefill).
+                throw HttpException::conflict('refill_billed', 'Refills are billed now: use Refill to raise the refill bill, then hand it over once paid.');
             } elseif (!in_array($order['status'], ['paid', 'partially_dispensed'], true)) {
                 throw HttpException::conflict('order_state', 'This order is not ready to be handed over.');
             }
@@ -626,6 +627,82 @@ final class PharmacyService
                 ]
             );
             return self::present(self::find($id));
+        });
+    }
+
+    // ─── Refills ─────────────────────────────────────────────────────────
+
+    /**
+     * The patient comes back for more of a completed prescription. The refill is its own order,
+     * at today's catalogue price, billed to the cashier and handed over once paid like any other.
+     *
+     * @param array<int, array{item_id:int, quantity:int}> $lines
+     */
+    public static function createRefill(int $id, array $lines, AuthContext $ctx): array
+    {
+        return Database::transaction(function () use ($id, $lines, $ctx): array {
+            $original = self::lock($id);
+            if ($original['source'] !== 'prescription' || $original['status'] !== 'completed') {
+                throw HttpException::conflict('order_state', 'Only a completed prescription can be refilled.');
+            }
+            $items = [];
+            foreach (Database::all('SELECT * FROM pharmacy_order_items WHERE order_id = :o', ['o' => $id]) as $item) {
+                $items[(int) $item['id']] = $item;
+            }
+            $taken = [];
+            foreach ($lines as $line) {
+                $item = $items[$line['item_id']] ?? throw HttpException::validation(['items' => 'An item is no longer on this order.']);
+                $quantity = max(0, $line['quantity']);
+                if ($quantity === 0) {
+                    continue;
+                }
+                $drug = Database::one('SELECT id, name, unit_price FROM drugs WHERE id = :d AND is_active = 1', ['d' => (int) $item['drug_id']])
+                    ?? throw HttpException::validation(["items.{$item['id']}" => "{$item['description']} is no longer in the catalogue."]);
+                $taken[] = ['item' => $item, 'quantity' => $quantity, 'price' => (float) $drug['unit_price']];
+            }
+            if ($taken === []) {
+                throw HttpException::validation(['items' => 'Enter at least one quantity to refill.']);
+            }
+            $total = round(array_sum(array_map(static fn (array $t) => $t['quantity'] * $t['price'], $taken)), 2);
+            $key = Format::localDateKey();
+            $refillId = Database::insert(
+                'INSERT INTO pharmacy_orders (order_no, source, refill_of_order_id, patient_id, visit_id, status, total_amount,
+                                             reviewed_at, reviewed_by, created_at, created_by)
+                 VALUES (:no, :source, :of, :patient, :visit, :status, :total, UTC_TIMESTAMP(3), :by, UTC_TIMESTAMP(3), :by2)',
+                [
+                    'no' => sprintf('PHM-%s-%03d', $key, Sequence::next("pharmacy:$key")), 'source' => 'refill', 'of' => $id,
+                    'patient' => (int) $original['patient_id'], 'visit' => $original['visit_id'] === null ? null : (int) $original['visit_id'],
+                    'status' => 'awaiting_payment', 'total' => $total, 'by' => $ctx->userId, 'by2' => $ctx->userId,
+                ]
+            );
+            foreach ($taken as $t) {
+                Database::execute(
+                    'INSERT INTO pharmacy_order_items (order_id, drug_id, description, dose, frequency, duration, instructions_enc,
+                                                       quantity, prescribed_qty, unit_price, catalogue_price)
+                     VALUES (:o, :drug, :desc, :dose, :freq, :duration, :instructions, :qty, :qty2, :price, :price2)',
+                    [
+                        'o' => $refillId, 'drug' => (int) $t['item']['drug_id'], 'desc' => $t['item']['description'],
+                        'dose' => $t['item']['dose'], 'freq' => $t['item']['frequency'], 'duration' => $t['item']['duration'],
+                        'instructions' => $t['item']['instructions_enc'], 'qty' => $t['quantity'], 'qty2' => $t['quantity'],
+                        'price' => $t['price'], 'price2' => $t['price'],
+                    ]
+                );
+            }
+            $billId = BillingService::createBill(
+                (int) $original['patient_id'], $original['visit_id'] === null ? null : (int) $original['visit_id'], 'pharmacy',
+                "Medicine refill of {$original['order_no']} — " . implode(', ', array_map(static fn (array $t) => $t['item']['description'], $taken)),
+                array_map(static fn (array $t) => [
+                    'price_item_id' => null, 'description' => $t['item']['description'], 'quantity' => $t['quantity'], 'unit_price' => $t['price'],
+                ], $taken),
+                false, null, false, $ctx->userId, 'pharmacy_order', $refillId
+            );
+            Database::execute('UPDATE pharmacy_orders SET bill_id = :b WHERE id = :id', ['b' => $billId, 'id' => $refillId]);
+            Database::execute(
+                'UPDATE pharmacy_orders SET refill_count = refill_count + 1, updated_at = UTC_TIMESTAMP(3), updated_by = :by, row_version = row_version + 1 WHERE id = :id',
+                ['by' => $ctx->userId, 'id' => $id]
+            );
+            self::refreshStatus($refillId, $ctx->userId);
+            return self::show($refillId, $ctx);
         });
     }
 

@@ -87,6 +87,16 @@ final class PharmacyController
         return ['order' => $order];
     }
 
+    /** A refill of a completed prescription: its own order and bill at today's price, handed over once paid. */
+    public function refill(Request $request, array $params): array
+    {
+        $ctx = Auth::require();
+        $order = PharmacyService::createRefill((int) $params['id'], $this->lines($request), $ctx);
+        Audit::log('pharmacy', 'pharmacy.refill_billed',
+            "Refill {$order['order_no']} of {$order['refill_of']} — bill {$order['bill']['bill_no']}", 'pharmacy_order', $order['order_no']);
+        return ['order' => $order];
+    }
+
     /** The patient comes back for medicine they could not take before; that part is billed on its own. */
     public function supplyBalance(Request $request, array $params): array
     {

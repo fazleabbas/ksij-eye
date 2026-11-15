@@ -27,6 +27,8 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `optical-waiting-browser.mjs` | The same on screen: Order now ticks, waiting pair in Incoming |
 | `operation-templates.mjs` | Operation templates: the clinic's five loaded, edited in Settings, joined on a booking, seeding never overwrites edits |
 | `operation-templates-browser.mjs` | Intra-op notes and the first post-op review start from the template; the Settings editor |
+| `pharmacy-refill.mjs` | Paid refills: own order at today's price, pay first, hand over; old free refill closed |
+| `pharmacy-refill-browser.mjs` | The Refill window on screen |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

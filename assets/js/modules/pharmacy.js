@@ -41,7 +41,7 @@ function phFilters(prefix) {
 
 function phCustomerCell(order) {
   return `<div style="font-weight:600">${KSI.esc(order.customer.name)}${uiFastTrackTag(order)}</div>
-    <div class="muted-note">${KSI.esc(order.customer.reference)}${order.source === 'walk_in' ? ' · counter sale' : ''}</div>`;
+    <div class="muted-note">${KSI.esc(order.customer.reference)}${order.source === 'walk_in' ? ' · counter sale' : order.source === 'refill' ? ` · refill of ${KSI.esc(order.refill_of || '')}` : ''}</div>`;
 }
 
 function phMedicinesCell(order) {
@@ -129,12 +129,16 @@ async function phOpenOrder(id, mode) {
   const { order } = await KSI.get(`pharmacy/orders/${id}`);
   PH.current = order;
   PH.mode = mode;
-  document.getElementById('ph-order-title').textContent = `${order.source === 'walk_in' ? 'Counter sale' : 'Medication order'} ${order.order_no}`;
+  document.getElementById('ph-order-title').textContent = `${mode === 'refill' ? 'Refill of' : order.source === 'walk_in' ? 'Counter sale' : order.source === 'refill' ? 'Refill' : 'Medication order'} ${order.order_no}`;
   document.getElementById('ph-order-subtitle').textContent =
     `${order.customer.name} · ${order.customer.reference}${order.prescribed_by ? ' · prescribed by ' + order.prescribed_by : ''}`;
 
   const review = mode === 'review';
   const balance = mode === 'balance';
+  // A refill is billed at today's catalogue price, starting from the quantities last supplied.
+  const refill = mode === 'refill';
+  if (refill) await phOptions();
+  const todayPrice = item => PH.options?.drugs?.find(d => d.id === item.drug_id)?.unit_price ?? item.unit_price;
   document.getElementById('ph-order-body').innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       ${uiBadge('pharmacyStatus', order.status)}
@@ -164,7 +168,8 @@ async function phOpenOrder(id, mode) {
         <thead>
           <tr>
             <th>Medicine</th><th>Dose</th><th>How often</th><th>For how long</th>
-            <th>On the shelf</th><th>Price each</th>${review ? '<th>Prescribed</th><th>Supply now</th><th>Line total</th>'
+            <th>On the shelf</th><th>Price each${refill ? ' (today)' : ''}</th>${refill ? '<th>Last supplied</th><th>Refill now</th><th>Line total</th>'
+              : review ? '<th>Prescribed</th><th>Supply now</th><th>Line total</th>'
               : balance ? '<th>Taken</th><th>Still to collect</th><th>Supply now</th><th>Line total</th>'
               : `<th>Billed</th><th>Handed over</th>${order.balance_qty ? '<th>Still to collect</th>' : ''}`}
           </tr>
@@ -179,8 +184,13 @@ async function phOpenOrder(id, mode) {
             <td>${KSI.esc(item.frequency || '—')}</td>
             <td>${KSI.esc(item.duration || '—')}</td>
             <td>${uiBadge('stockLevel', item.in_stock > 0 ? 'in_stock' : 'out_of_stock', String(item.in_stock))}</td>
-            <td class="money">${phMoney(item.unit_price)}</td>
-            ${review ? `
+            <td class="money">${phMoney(refill ? todayPrice(item) : item.unit_price)}</td>
+            ${refill ? `
+              <td>${item.quantity}</td>
+              <td><input type="number" class="form-input ph-qty" data-item="${item.id}" data-price="${todayPrice(item)}"
+                   min="0" max="999" value="${Math.min(item.quantity, item.in_stock)}" oninput="phReviewTotal()" style="width:80px"></td>
+              <td class="money" id="ph-line-${item.id}">${phMoney(Math.min(item.quantity, item.in_stock) * todayPrice(item))}</td>`
+            : review ? `
               <td>${item.prescribed_qty}</td>
               <td><input type="number" class="form-input ph-qty" data-item="${item.id}" data-price="${item.unit_price}" data-prescribed="${item.prescribed_qty}"
                    min="0" max="${Math.max(item.quantity, item.in_stock)}" value="${Math.min(item.quantity, item.in_stock)}"
@@ -198,14 +208,17 @@ async function phOpenOrder(id, mode) {
         </tbody>
       </table>
     </div>
-    ${review || balance ? `<div class="opt-price-box" style="margin-top:12px">
-      <div><div class="pcd-label">Bill to raise</div><div class="muted-note">${review
+    ${review || balance || refill ? `<div class="opt-price-box" style="margin-top:12px">
+      <div><div class="pcd-label">Bill to raise</div><div class="muted-note">${refill
+        ? 'A refill is billed at today’s price. The patient pays at the cashier, then the refill is handed over from Dispense Medication.'
+        : review
         ? 'If the patient can only take part now, enter less (or 0): the rest is kept as a balance they collect on a later day, at the price shown here.'
         : 'Only what the patient takes today is billed; anything left stays as the balance.'}</div>
         ${review ? '<div class="muted-note" id="ph-review-balance"></div>' : ''}</div>
       <div class="opt-price-amount" id="ph-review-total">TZS 0</div>
     </div>` : ''}
-    ${!review && !balance && order.balance_qty ? `<div class="alert alert-info" style="margin-top:12px">
+    ${order.refill_of ? `<div class="cl-note" style="margin-top:10px">Refill of order ${KSI.esc(order.refill_of)}.</div>` : ''}
+    ${!review && !balance && !refill && order.balance_qty ? `<div class="alert alert-info" style="margin-top:12px">
       <strong>${order.balance_qty} still to collect.</strong> The patient can come back to the pharmacy for the rest (Balance to Collect).
       ${order.status === 'completed' ? '' : `<div style="margin-top:4px">"Supply balance" becomes available once ${order.bill
         ? `bill ${KSI.esc(order.bill.bill_no)} is ${order.status === 'awaiting_payment' ? 'paid and the medicine' : 'settled and everything paid for is'}`
@@ -231,6 +244,7 @@ async function phOpenOrder(id, mode) {
     <button class="btn btn-secondary" onclick="closeModal('modal-pharm-order')">Close</button>
     ${review ? `<button class="btn btn-primary" onclick="phConfirmReview(this)">Confirm and raise the bill</button>` : ''}
     ${balance ? `<button class="btn btn-primary" onclick="phConfirmBalance(this)">Raise the bill for these</button>` : ''}
+    ${refill ? `<button class="btn btn-primary" onclick="phConfirmRefill(this)">Raise refill bill</button>` : ''}
     ${!balance && order.balance_qty && order.status === 'completed' && KSI.can('pharmacy.orders.review')
       ? `<button class="btn btn-primary" onclick="phOpenOrder(${order.id}, 'balance')">Supply balance</button>` : ''}
     ${order.balance_qty && KSI.can('pharmacy.cancel')
@@ -240,7 +254,7 @@ async function phOpenOrder(id, mode) {
     ${!review && ['awaiting_payment', 'paid', 'partially_dispensed'].includes(order.status) && KSI.can('pharmacy.cancel')
       ? `<button class="btn btn-danger" onclick="phOpenCancel(${order.id})">Cancel what is left</button>` : ''}`;
 
-  if (review || balance) phReviewTotal();
+  if (review || balance || refill) phReviewTotal();
   openModal('modal-pharm-order');
 }
 
@@ -265,6 +279,21 @@ function phReviewTotal() {
     }).filter(Boolean);
     left.innerHTML = lines.length ? `<strong>Balance to collect later:</strong> ${KSI.esc(lines.join(', '))}` : '';
   }
+}
+
+async function phConfirmRefill(button) {
+  const modal = document.getElementById('modal-pharm-order');
+  KSI.clearFieldErrors(modal);
+  await admBusy(button, async () => {
+    try {
+      const { order } = await KSI.post(`pharmacy/orders/${PH.current.id}/refill`, { items: phQuantityLines('#ph-order-body') });
+      closeModal('modal-pharm-order');
+      showToast('Refill billed', `${order.order_no} — ${phMoney(order.total_amount)} sent to the cashier. Hand it over once paid.`, 'success');
+      await phRefreshLists();
+    } catch (error) {
+      KSI.reportError(error, modal, 'Could not raise the refill bill');
+    }
+  });
 }
 
 async function phConfirmBalance(button) {
@@ -591,7 +620,7 @@ function phRenderRefills() {
     <td>
       <div class="row-actions">
         <button class="action-btn action-view" onclick="phOpenOrder(${o.id}, 'view')">View</button>
-        ${KSI.can('pharmacy.dispense') ? `<button class="action-btn action-edit" onclick="phOpenDispense(${o.id}, 'refill')">Refill</button>` : ''}
+        ${KSI.can('pharmacy.dispense') ? `<button class="action-btn action-edit" onclick="phOpenOrder(${o.id}, 'refill')">Refill</button>` : ''}
       </div>
     </td>
   </tr>`).join('');

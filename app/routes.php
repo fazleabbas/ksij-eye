@@ -194,6 +194,7 @@ return static function (Router $r): void {
     $r->add('POST', '/pharmacy/orders/{id}/dispense',   [PharmacyController::class, 'dispense'],        'pharmacy.dispense');
     $r->add('POST', '/pharmacy/orders/{id}/cancel',     [PharmacyController::class, 'cancelRemaining'], 'pharmacy.cancel');
     $r->add('POST', '/pharmacy/orders/{id}/balance',    [PharmacyController::class, 'supplyBalance'],   'pharmacy.orders.review');
+    $r->add('POST', '/pharmacy/orders/{id}/refill',     [PharmacyController::class, 'refill'],          'pharmacy.dispense');
     $r->add('POST', '/pharmacy/orders/{id}/balance/close', [PharmacyController::class, 'closeBalance'], 'pharmacy.cancel');
     $r->add('POST', '/pharmacy/walk-in-sales',          [PharmacyController::class, 'walkInSale'],      'pharmacy.external_sale');
     $r->add('GET',  '/pharmacy/stock',                  [PharmacyController::class, 'stock'],           'pharmacy.inventory.view', touch: false);

@@ -38,6 +38,8 @@ run "optical waiting api"  node optical-waiting.mjs
 run "optical waiting browser" node optical-waiting-browser.mjs
 run "operation templates api" node operation-templates.mjs
 run "operation templates browser" node operation-templates-browser.mjs
+run "pharmacy refill api"  node pharmacy-refill.mjs
+run "pharmacy refill browser" node pharmacy-refill-browser.mjs
 run "all screens"         node smoke-modules.mjs
 
 if [ -n "$FAILED" ]; then printf "\nSuites that failed or crashed:%b\n" "$FAILED"; exit 1; fi
