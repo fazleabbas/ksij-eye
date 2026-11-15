@@ -25,6 +25,27 @@ for (const [module, prefix] of Object.entries(working)) {
   equal(`${module} keeps all open work (no date filter)`, dates, ['', '']);
 }
 
+// Refunds: In Progress is a working list (all dates); Refund History opens on today.
+await evaluate(`showModule('cashier-refunds')`);
+await sleep(400);
+equal('refunds in progress show all open work', await evaluate(`[document.getElementById('rf-from').value, document.getElementById('rf-to').value]`), ['', '']);
+await evaluate(`rfSwitchTab('history')`);
+await sleep(300);
+equal('refund history opens on today', await evaluate(`[document.getElementById('rf-from').value, document.getElementById('rf-to').value]`), [today, today]);
+await evaluate(`rfSwitchTab('pending')`);
+await sleep(300);
+equal('going back to In Progress clears the dates again', await evaluate(`[document.getElementById('rf-from').value, document.getElementById('rf-to').value]`), ['', '']);
+
+// Every report opens on today.
+await evaluate(`showModule('report-terminal')`);
+await waitUntil(`document.getElementById('rp-type').options.length > 0 && !!RP.options`, 15000, 'reports');
+const reportTypes = await evaluate(`[...document.getElementById('rp-type').options].map(o => o.value)`);
+for (const type of reportTypes) {
+  await evaluate(`(() => { document.getElementById('rp-type').value = '${type}'; rpTypeChanged(); })()`);
+  await sleep(150);
+  equal(`the ${type} report opens on today`, await evaluate(`[document.getElementById('rp-from').value, document.getElementById('rp-to').value]`), [today, today]);
+}
+
 // A date the user changes is kept when they come back to the screen.
 await evaluate(`(() => { showModule('pharm-history'); document.getElementById('ph-hist-from').value = '2026-01-01'; showModule('dashboard'); showModule('pharm-history'); return true; })()`);
 equal('a changed date is kept', await evaluate(`document.getElementById('ph-hist-from').value`), '2026-01-01');

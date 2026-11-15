@@ -22,21 +22,21 @@ use App\Core\Http\HttpException;
  */
 final class ReportService
 {
-    /** Every report, what it needs to be seen, and how far back it looks by default. */
+    /** Every report, what it needs to be seen, and how far back it looks by default (all open on today). */
     public const REPORTS = [
         'collections' => ['title' => 'Daily Collections', 'permission' => 'reports.financial', 'days' => 0],
-        'financial' => ['title' => 'Financial Summary', 'permission' => 'reports.financial', 'days' => 30],
-        'reception' => ['title' => 'Reception and Visits', 'permission' => 'reports.view', 'days' => 7],
-        'patients' => ['title' => 'Patients', 'permission' => 'reports.view', 'days' => 30],
-        'diagnostics' => ['title' => 'Diagnostic Tests', 'permission' => 'reports.clinical', 'days' => 30],
-        'theatre' => ['title' => 'Surgery', 'permission' => 'reports.clinical', 'days' => 30],
-        'optical' => ['title' => 'Optical Orders', 'permission' => 'reports.view', 'days' => 30],
-        'pharmacy' => ['title' => 'Pharmacy', 'permission' => 'reports.view', 'days' => 30],
-        'stores' => ['title' => 'Stores and Procurement', 'permission' => 'reports.view', 'days' => 30],
-        'mtuha_main' => ['title' => 'Main MTUHA Register', 'permission' => 'mtuha.view', 'days' => 30],
-        'mtuha_surgery' => ['title' => 'Surgery MTUHA Register', 'permission' => 'mtuha.view', 'days' => 30],
-        'pediatric' => ['title' => 'Pediatric Report', 'permission' => 'mtuha.view', 'days' => 30],
-        'glaucoma' => ['title' => 'Glaucoma Report', 'permission' => 'mtuha.view', 'days' => 30],
+        'financial' => ['title' => 'Financial Summary', 'permission' => 'reports.financial', 'days' => 0],
+        'reception' => ['title' => 'Reception and Visits', 'permission' => 'reports.view', 'days' => 0],
+        'patients' => ['title' => 'Patients', 'permission' => 'reports.view', 'days' => 0],
+        'diagnostics' => ['title' => 'Diagnostic Tests', 'permission' => 'reports.clinical', 'days' => 0],
+        'theatre' => ['title' => 'Surgery', 'permission' => 'reports.clinical', 'days' => 0],
+        'optical' => ['title' => 'Optical Orders', 'permission' => 'reports.view', 'days' => 0],
+        'pharmacy' => ['title' => 'Pharmacy', 'permission' => 'reports.view', 'days' => 0],
+        'stores' => ['title' => 'Stores and Procurement', 'permission' => 'reports.view', 'days' => 0],
+        'mtuha_main' => ['title' => 'Main MTUHA Register', 'permission' => 'mtuha.view', 'days' => 0],
+        'mtuha_surgery' => ['title' => 'Surgery MTUHA Register', 'permission' => 'mtuha.view', 'days' => 0],
+        'pediatric' => ['title' => 'Pediatric Report', 'permission' => 'mtuha.view', 'days' => 0],
+        'glaucoma' => ['title' => 'Glaucoma Report', 'permission' => 'mtuha.view', 'days' => 0],
     ];
 
     public static function run(string $type, array $filters, AuthContext $ctx): array

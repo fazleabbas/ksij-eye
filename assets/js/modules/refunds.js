@@ -3,7 +3,9 @@
 // Request (cashier) → decision in Approvals (may be lowered) → payout recorded
 // by the cashier. A bill can have only one refund in progress at a time.
 
-const REFUND_UI = { tab: 'pending', rows: [], patient: null, bills: [], bill: null, picker: null, payout: null };
+const REFUND_UI = { tab: 'pending', rows: [], patient: null, bills: [], bill: null, picker: null, payout: null,
+  // Each tab keeps its own dates: In Progress is a worklist (all dates); History opens on today.
+  dates: { pending: { from: '', to: '' }, history: null } };
 
 function rfRenderModule() {
   document.getElementById('rf-new-btn').style.display = KSI.can('refunds.request') ? '' : 'none';
@@ -11,6 +13,12 @@ function rfRenderModule() {
 }
 
 function rfSwitchTab(tab) {
+  const from = document.getElementById('rf-from');
+  const to = document.getElementById('rf-to');
+  REFUND_UI.dates[REFUND_UI.tab] = { from: from.value, to: to.value };
+  const saved = REFUND_UI.dates[tab] ?? { from: uiToday(), to: uiToday() };
+  from.value = saved.from;
+  to.value = saved.to;
   REFUND_UI.tab = tab;
   document.querySelectorAll('#rf-tabs .tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
   rfLoad();

@@ -34,9 +34,11 @@ function rpDefinition() {
 }
 
 function rpSetDefaultDates() {
-  const days = rpDefinition()?.days ?? 30;
+  // Every report opens on today (clinic decision); the window stays configurable per report.
+  const days = rpDefinition()?.days ?? 0;
   const to = RP.options.today;
-  const from = new Date(new Date(to + 'T00:00:00').getTime() - days * 86400000).toISOString().slice(0, 10);
+  // Counted in UTC so the browser's time zone cannot shift the date by a day.
+  const from = new Date(new Date(to + 'T00:00:00Z').getTime() - days * 86400000).toISOString().slice(0, 10);
   document.getElementById('rp-from').value = from;
   document.getElementById('rp-to').value = to;
 }
