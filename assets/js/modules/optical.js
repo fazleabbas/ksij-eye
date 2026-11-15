@@ -1,7 +1,9 @@
 'use strict';
 // ─── OPTICAL ROOM ─────────────────────────────────────────────────────────
-// Prescriptions referred by optometry become spectacle orders. The lens and
-// its price come from optometry and cannot be changed here. Confirming the
+// Prescriptions referred by optometry become spectacle orders. The lens comes
+// from optometry; if the patient wants another lens the optician may change it
+// (with a reason) while confirming, or later while the order is unpaid and not
+// yet with the supplier. The prescription itself never changes. Confirming the
 // order raises the cashier bill; spectacles are handed over only once it is
 // settled. Discounts and cancellations are decided in Approvals.
 
@@ -280,7 +282,9 @@ async function optOpenConfirm(assessmentId) {
   document.getElementById('opt-create-rx').innerHTML = `<div class="card-head"><div class="card-title">Prescription</div></div>${optRxHtml(prescription)}`;
   // One pair per prescription, all on this order and its one bill; each pair may take a frame.
   const sets = optRxSets(prescription).filter(set => (set.lenses || []).length);
+  sets.forEach(set => { set.original = set.lenses; });
   OPT.referral.sets = sets;
+  OPT.lensEdits = {};
   document.getElementById('opt-create-order').innerHTML = `
     <div class="card-head"><div class="card-title">Order</div></div>
     <div class="diag-report-facts">
@@ -291,15 +295,12 @@ async function optOpenConfirm(assessmentId) {
     </div>
     ${sets.map((set, i) => `
       <div class="form-label" style="margin-top:14px">${KSI.esc(sets.length > 1 ? optSetTitle(set, i, sets.length) : 'Lens — chosen by the optometrist')}</div>
-      <div class="opt-price-box">
-        <div>${set.lenses.map(l => `<div>${KSI.esc(l.name)}</div>`).join('')}</div>
-        <div class="opt-price-amount">${optMoney(set.lenses.reduce((sum, l) => sum + l.unit_price, 0))}</div>
-      </div>
+      <div id="opt-create-lens-${set.set_no}">${optConfirmLensHtml(set)}</div>
       <div class="form-group" data-field="frames" style="margin-top:8px">
         <label class="form-label" for="opt-create-frame-${set.set_no}">Frame from us (${optMoney(OPT.options.frame_prices.patient)})</label>
         <select class="form-select" id="opt-create-frame-${set.set_no}" data-set="${set.set_no}" onchange="optConfirmTotal()"></select>
       </div>`).join('')}
-    <div class="muted-note">Lens prices are set by the price list and cannot be changed here.</div>
+    <div class="muted-note">Lens prices come from the price list. If the patient wants another lens, use "Change lens" — the prescription stays as Optometry recorded it.</div>
     <div class="opt-price-box" style="margin-top:10px"><div>Total to pay${sets.length > 1 ? ` — ${sets.length} pairs, one bill` : ''}</div><div class="opt-price-amount" id="opt-create-total"></div></div>
     <div class="alert alert-info" style="margin-top:12px">Confirming raises the bill and sends it to the cashier. The spectacles are handed over once it is paid.</div>
     <div class="modal-footer" style="padding:16px 0 0">
@@ -315,8 +316,133 @@ function optConfirmFrames() {
     .filter(select => select.value).map(select => ({ set_no: Number(select.dataset.set), frame_id: Number(select.value) }));
 }
 
+/** A pair's lens on the confirm page: Optometry's choice, or the patient's changed choice with its reason. */
+function optConfirmLensHtml(set) {
+  const edit = OPT.lensEdits?.[set.set_no];
+  const canChange = KSI.can('optical.orders.manage');
+  return `<div class="opt-price-box">
+      <div>${set.lenses.map(l => `<div>${KSI.esc(l.name)}</div>`).join('')}</div>
+      <div class="opt-price-amount">${optMoney(set.lenses.reduce((sum, l) => sum + l.unit_price, 0))}</div>
+    </div>
+    ${edit ? `<div class="cl-note" style="margin-top:6px">Changed from Optometry's choice (${KSI.esc(set.original.map(l => l.name).join(', '))}).
+      Reason: ${KSI.esc(edit.reason)} · <a href="#" onclick="event.preventDefault();optUndoLensChange(${set.set_no})">Undo</a></div>` : ''}
+    ${canChange ? `<button type="button" class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="optOpenLensChange('confirm', ${set.set_no})">Change lens</button>` : ''}`;
+}
+
+function optUndoLensChange(setNo) {
+  const set = OPT.referral.sets.find(x => x.set_no === setNo);
+  delete OPT.lensEdits[setNo];
+  set.lenses = set.original;
+  document.getElementById(`opt-create-lens-${setNo}`).innerHTML = optConfirmLensHtml(set);
+  optConfirmTotal();
+}
+
+// ── Changing the lens (confirm page, or an unpaid order not yet with the supplier) ──
+async function optOpenLensChange(mode, setNo = null, orderId = null) {
+  await optOptions();
+  const form = document.getElementById('opt-lens-form');
+  form.reset();
+  KSI.clearFieldErrors(form);
+  OPT.lensChange = { mode, setNo, orderId };
+  const setGroup = document.getElementById('opt-lens-set-group');
+  if (mode === 'confirm') {
+    const set = OPT.referral.sets.find(x => x.set_no === setNo);
+    setGroup.style.display = 'none';
+    document.getElementById('opt-lens-info').innerHTML = `Optometry chose: <strong>${KSI.esc(set.original.map(l => l.name).join(', '))}</strong>
+      (${optMoney(set.original.reduce((sum, l) => sum + l.unit_price, 0))}).`;
+    document.getElementById('opt-lens-reason').value = OPT.lensEdits[setNo]?.reason || '';
+    document.getElementById('opt-lens-save').textContent = 'Use this lens';
+  } else {
+    const order = OPT.current;
+    const pairs = [...new Map(order.items.filter(i => i.kind === 'lens').map(i => [i.set_no, i.rx_label])).entries()];
+    setGroup.style.display = pairs.length > 1 ? '' : 'none';
+    document.getElementById('opt-lens-set').innerHTML = pairs.map(([no, label], i) =>
+      `<option value="${no ?? ''}">${KSI.esc(label || (pairs.length > 1 ? `Prescription ${i + 1}` : 'Lens'))}</option>`).join('');
+    OPT.lensChange.setNo = pairs[0]?.[0] ?? null;
+    document.getElementById('opt-lens-info').innerHTML = `Bill <strong>${KSI.esc(order.bill?.bill_no || '')}</strong> will be cancelled and a new bill
+      raised for the new total. An approved discount does not carry over — ask for it again if needed.`;
+    document.getElementById('opt-lens-save').textContent = 'Change lens and re-raise the bill';
+  }
+  optLensSetChanged();
+  openModal('modal-opt-change-lens');
+}
+
+/** The lenses currently on the pair being changed. */
+function optLensCurrentIds() {
+  const { mode, setNo } = OPT.lensChange;
+  if (mode === 'confirm') return OPT.referral.sets.find(x => x.set_no === setNo).lenses.map(l => l.price_item_id);
+  return OPT.current.items.filter(i => i.kind === 'lens' && i.set_no === setNo).map(i => i.price_item_id);
+}
+
+function optLensSetChanged() {
+  if (OPT.lensChange.mode === 'order' && document.getElementById('opt-lens-set-group').style.display !== 'none') {
+    const value = document.getElementById('opt-lens-set').value;
+    OPT.lensChange.setNo = value === '' ? null : Number(value);
+  }
+  const current = optLensCurrentIds();
+  document.getElementById('opt-lens-list').innerHTML = (OPT.options.lenses || []).map(l => `<label class="finding-cb">
+      <input type="checkbox" value="${l.id}"${current.includes(l.id) ? ' checked' : ''} onchange="optLensChangeTotal()">
+      <span class="finding-cb-label">${KSI.esc(l.name)} — ${optMoney(l.unit_price)}</span></label>`).join('')
+    || '<div class="muted-note">No lenses on the price list.</div>';
+  optLensChangeTotal();
+}
+
+function optLensChosen() {
+  const ids = [...document.querySelectorAll('#opt-lens-list input:checked')].map(i => Number(i.value));
+  return (OPT.options.lenses || []).filter(l => ids.includes(l.id));
+}
+
+function optLensChangeTotal() {
+  const chosen = optLensChosen();
+  document.getElementById('opt-lens-total').innerHTML = chosen.length
+    ? `<div class="opt-price-box" style="margin:8px 0 12px"><div>New lens price</div><div class="opt-price-amount">${optMoney(chosen.reduce((sum, l) => sum + l.unit_price, 0))}</div></div>`
+    : '<div class="muted-note" style="margin:8px 0 12px">Choose at least one lens.</div>';
+}
+
+async function optSubmitLensChange(button) {
+  const form = document.getElementById('opt-lens-form');
+  KSI.clearFieldErrors(form);
+  const chosen = optLensChosen();
+  const reason = document.getElementById('opt-lens-reason').value.trim();
+  const errors = {};
+  if (!chosen.length) errors.lens_ids = 'Choose at least one lens.';
+  if (reason.length < 3) errors.reason = 'Say why the lens is being changed.';
+  if (Object.keys(errors).length) {
+    KSI.showFieldErrors(form, errors);
+    return;
+  }
+  const { mode, setNo, orderId } = OPT.lensChange;
+  if (mode === 'confirm') {
+    const set = OPT.referral.sets.find(x => x.set_no === setNo);
+    const same = chosen.map(l => l.id).sort().join() === set.original.map(l => l.price_item_id).sort().join();
+    if (same) {
+      optUndoLensChange(setNo);
+    } else {
+      OPT.lensEdits[setNo] = { lens_ids: chosen.map(l => l.id), reason };
+      set.lenses = chosen.map(l => ({ price_item_id: l.id, name: l.name, unit_price: l.unit_price, set_no: setNo, label: set.label }));
+      document.getElementById(`opt-create-lens-${setNo}`).innerHTML = optConfirmLensHtml(set);
+      optConfirmTotal();
+    }
+    closeModal('modal-opt-change-lens');
+    return;
+  }
+  await admBusy(button, async () => {
+    try {
+      const { order } = await KSI.post(`optical/orders/${orderId}/lenses`, {
+        set_no: setNo, lens_ids: chosen.map(l => l.id), reason, row_version: OPT.current.row_version,
+      });
+      closeModal('modal-opt-change-lens');
+      showToast('Lens changed', `${order.order_no} — new bill ${order.bill.bill_no} sent to the cashier.`, 'success');
+      await optOpenDetail(order.id, OPT.current.context);
+      optRefreshLists();
+    } catch (error) {
+      KSI.reportError(error, form, 'Could not change the lens');
+    }
+  });
+}
+
 function optConfirmTotal() {
-  const lenses = OPT.referral.lenses.reduce((sum, l) => sum + l.unit_price, 0);
+  const lenses = OPT.referral.sets.reduce((sum, set) => sum + set.lenses.reduce((s2, l) => s2 + l.unit_price, 0), 0);
   const frames = optConfirmFrames().length * OPT.options.frame_prices.patient;
   document.getElementById('opt-create-total').textContent = optMoney(lenses + frames);
 }
@@ -326,7 +452,8 @@ async function optConfirmOrder(button) {
   KSI.clearFieldErrors(page);
   await admBusy(button, async () => {
     try {
-      const { order } = await KSI.post('optical/orders', { assessment_id: OPT.referral.assessment_id, frames: optConfirmFrames() });
+      const lenses = Object.entries(OPT.lensEdits || {}).map(([setNo, edit]) => ({ set_no: Number(setNo), lens_ids: edit.lens_ids, reason: edit.reason }));
+      const { order } = await KSI.post('optical/orders', { assessment_id: OPT.referral.assessment_id, frames: optConfirmFrames(), lenses });
       showToast('Order raised', `${order.order_no} — bill ${order.bill.bill_no} sent to the cashier.`, 'success');
       OPT.options = null;
       showModule('opt-active');
@@ -468,6 +595,13 @@ async function optOpenDetail(id, context) {
       </div>`}`}
     ${!hasLens && !order.is_paid && order.status !== 'cancelled' ? '<div class="alert alert-warning" style="margin-top:12px">Ready to hand over as soon as the bill is paid.</div>' : ''}
 
+    ${(order.lens_changes || []).length ? `<div class="form-label" style="margin-top:14px">Lens changes</div>
+      ${order.lens_changes.map(c => `<div class="cl-note" style="margin-bottom:6px">
+        <div><strong>${KSI.esc(c.rx_label ? `${c.rx_label}: ` : '')}${KSI.esc(c.from)} → ${KSI.esc(c.to)}</strong> (${optMoney(c.from_amount)} → ${optMoney(c.to_amount)})</div>
+        <div>Reason: ${KSI.esc(c.reason || '—')}</div>
+        <div class="text-xs text-muted">${c.stage === 'confirm' ? 'When the order was confirmed' : `On the order${c.old_bill_no ? ` — bill ${KSI.esc(c.old_bill_no)} replaced` : ''}`}
+          · ${KSI.esc(c.changed_by)} · ${KSI.fmtDateTime(c.changed_at)}</div></div>`).join('')}` : ''}
+
     ${order.prescription ? `<div class="form-label" style="margin-top:14px">Prescription</div>
     ${optRxHtml({ ...order.prescription, patient: order.patient, visit_no: order.visit_no, optometrist: order.optometrist, lenses: order.items.map(i => ({ name: i.description, unit_price: i.unit_price })) })}` : ''}`;
 
@@ -479,6 +613,8 @@ async function optOpenDetail(id, context) {
       ? `<button class="btn btn-secondary" onclick="optOpenDiscount(${order.id})">Ask for a discount</button>` : ''}
     ${editable && KSI.can('optical.cancel.request')
       ? `<button class="btn btn-danger" onclick="optOpenCancel(${order.id})">Request cancellation</button>` : ''}
+    ${editable && hasLens && !order.lens_change_blocked
+      ? `<button class="btn btn-secondary" onclick="optOpenLensChange('order', null, ${order.id})">Change lens</button>` : ''}
     ${editable && hasLens ? `<button class="btn btn-primary" onclick="optSaveTracking(this)">Save</button>` : ''}
     ${order.status === 'dispensed' && KSI.can('optical.orders.manage')
       ? `<button class="btn btn-secondary" onclick="optOpenChangeFrame(${order.id})">Change frame</button>` : ''}

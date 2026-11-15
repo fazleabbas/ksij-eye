@@ -226,6 +226,8 @@ final class OpticalService
         $order['items'] = self::items($id);
         $order['prescription'] = $row['assessment_id'] === null ? null : self::prescription((int) $row['assessment_id']);
         $order['change_reason'] = Crypto::decrypt($row['change_reason_enc'], 'optical_orders.change_reason');
+        $order['lens_changes'] = self::lensChanges($id);
+        $order['lens_change_blocked'] = self::lensChangeBlocked($row, $order['bill']);
         if ($row['patient_id'] !== null) {
             \App\Core\Audit::access((int) $row['patient_id'], 'optical', 'view', 'optical_order', $row['order_no']);
         }
@@ -442,9 +444,9 @@ final class OpticalService
      * Confirms the referral as one order for every prescription in the visit, with a frame for
      * each pair the patient takes one for ([set_no => frame_id]), and raises one cashier bill.
      */
-    public static function createOrder(int $assessmentId, array $frameIdsBySet, AuthContext $ctx): array
+    public static function createOrder(int $assessmentId, array $frameIdsBySet, AuthContext $ctx, array $lensChanges = []): array
     {
-        return Database::transaction(function () use ($assessmentId, $frameIdsBySet, $ctx): array {
+        return Database::transaction(function () use ($assessmentId, $frameIdsBySet, $ctx, $lensChanges): array {
             $assessment = Database::one(
                 "SELECT a.id, a.visit_id, a.status, a.refer_optical, v.patient_id
                    FROM optometry_assessments a JOIN visits v ON v.id = a.visit_id
@@ -462,6 +464,22 @@ final class OpticalService
                 throw HttpException::conflict('no_lens', 'Optometry did not record a lens. Send the prescription back to optometry.');
             }
             $labels = array_column($lenses, 'label', 'set_no');
+            // The patient wants another lens for a pair: [set_no => {lens_ids, reason}].
+            $changes = [];
+            foreach ($lensChanges as $setNo => $change) {
+                if (!array_key_exists((int) $setNo, $labels)) {
+                    throw HttpException::validation(['lenses' => 'A lens was changed on a prescription that is not on this visit.']);
+                }
+                $before = array_values(array_filter($lenses, static fn (array $l) => $l['set_no'] === (int) $setNo));
+                $after = array_map(static fn (array $item) => $item + ['set_no' => (int) $setNo, 'label' => $labels[(int) $setNo]],
+                    self::lensItemsById($change['lens_ids']));
+                if (self::sameLenses($before, $after)) {
+                    continue;
+                }
+                $lenses = array_merge(array_values(array_filter($lenses, static fn (array $l) => $l['set_no'] !== (int) $setNo)), $after);
+                $changes[] = ['set_no' => (int) $setNo, 'label' => $labels[(int) $setNo], 'before' => $before, 'after' => $after, 'reason' => $change['reason']];
+            }
+            usort($lenses, static fn (array $a, array $b) => [$a['set_no'], $a['name']] <=> [$b['set_no'], $b['name']]);
             $frames = [];
             $wanted = array_count_values(array_map('intval', array_filter($frameIdsBySet)));
             foreach ($wanted as $frameId => $count) {
@@ -480,8 +498,148 @@ final class OpticalService
                 'patient_id' => (int) $assessment['patient_id'], 'walkin_id' => null,
                 'visit_id' => (int) $assessment['visit_id'], 'assessment_id' => $assessmentId,
             ], $lenses, $frames, [], 'Spectacles', $ctx);
+            foreach ($changes as $change) {
+                self::recordLensChange($orderId, $change, 'confirm', null, $ctx->userId);
+            }
             return self::present(self::find($orderId));
         });
+    }
+
+    // ─── Changing the lens ───────────────────────────────────────────────
+
+    /** Why the lens of an order can no longer be changed, or null when it can. */
+    private static function lensChangeBlocked(array $order, ?array $bill): ?string
+    {
+        return match (true) {
+            $order['status'] !== 'ordered' => 'The lens has already been ordered from the supplier. Cancel the order and raise a new one.',
+            $bill === null => 'This order has no bill to re-price.',
+            $bill['status'] === 'discount_requested' || $bill['status'] === 'cancellation_requested'
+                => 'The bill is waiting for an approval decision. Try again once it is decided.',
+            $bill['status'] !== 'pending' || $bill['paid_amount'] > 0 => 'The bill has been paid, so the order cannot be changed. Cancel the order and raise a new one.',
+            default => null,
+        };
+    }
+
+    /**
+     * The patient wants another lens on an order that is not yet with the supplier and not paid:
+     * the pair's lens lines are replaced at today's price, the unpaid bill is cancelled and raised
+     * again for the new total (an approved discount does not carry over; ask again), and the
+     * change is kept with its reason. The prescription values never change.
+     */
+    public static function changeLens(int $id, ?int $setNo, array $lensIds, string $reason, int $rowVersion, AuthContext $ctx): array
+    {
+        return Database::transaction(function () use ($id, $setNo, $lensIds, $reason, $rowVersion, $ctx): array {
+            $order = self::lock($id);
+            if ((int) $order['row_version'] !== $rowVersion) {
+                throw HttpException::conflict('stale', 'Someone else changed this order. Reload and try again.');
+            }
+            $bill = $order['bill_id'] === null ? null : BillingService::lockBill((int) $order['bill_id']);
+            $blocked = self::lensChangeBlocked($order, $bill === null ? null : ['status' => $bill['status'], 'paid_amount' => (float) $bill['paid_amount']]);
+            if ($blocked !== null) {
+                throw HttpException::conflict('lens_locked', $blocked);
+            }
+            $lines = Database::all("SELECT * FROM optical_order_items WHERE order_id = :o AND kind = 'lens' ORDER BY id", ['o' => $id]);
+            $before = array_values(array_filter($lines, static fn (array $l) => ($l['set_no'] === null ? null : (int) $l['set_no']) === $setNo));
+            if ($before === []) {
+                throw HttpException::validation(['set_no' => 'This order has no lens on that prescription.']);
+            }
+            $label = $before[0]['rx_label'];
+            $after = array_map(static fn (array $item) => $item + ['set_no' => $setNo, 'label' => $label], self::lensItemsById($lensIds));
+            $beforeLenses = array_map(static fn (array $l) => ['price_item_id' => (int) $l['price_item_id'], 'name' => $l['description'], 'unit_price' => (float) $l['unit_price']], $before);
+            if (self::sameLenses($beforeLenses, $after)) {
+                throw HttpException::validation(['lens_ids' => 'Choose a different lens; this is the lens already on the order.']);
+            }
+
+            Database::execute('DELETE FROM optical_order_items WHERE order_id = :o AND kind = \'lens\' AND ' . ($setNo === null ? 'set_no IS NULL' : 'set_no = :s'),
+                $setNo === null ? ['o' => $id] : ['o' => $id, 's' => $setNo]);
+            foreach ($after as $lens) {
+                Database::execute(
+                    "INSERT INTO optical_order_items (order_id, kind, set_no, rx_label, price_item_id, frame_id, description, unit_price)
+                     VALUES (:o, 'lens', :s, :l, :p, NULL, :d, :u)",
+                    ['o' => $id, 's' => $setNo, 'l' => $label, 'p' => $lens['price_item_id'],
+                     'd' => mb_substr(($label ? "$label — " : '') . $lens['name'], 0, 190), 'u' => $lens['unit_price']]
+                );
+            }
+            $items = self::items($id);
+            $total = round(array_sum(array_column($items, 'unit_price')), 2);
+            Database::execute(
+                "UPDATE bills SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(3), cancelled_by = :by,
+                        updated_at = UTC_TIMESTAMP(3), updated_by = :by2, row_version = row_version + 1 WHERE id = :id",
+                ['by' => $ctx->userId, 'by2' => $ctx->userId, 'id' => (int) $bill['id']]
+            );
+            $billId = BillingService::createBill(
+                $order['patient_id'] === null ? null : (int) $order['patient_id'],
+                $order['visit_id'] === null ? null : (int) $order['visit_id'],
+                'optical', mb_substr("Spectacles {$order['order_no']} (lens changed) — " . implode(', ', array_column($items, 'description')), 0, 255),
+                array_map(static fn (array $l) => ['price_item_id' => $l['price_item_id'], 'description' => $l['description'], 'quantity' => 1, 'unit_price' => $l['unit_price']], $items),
+                false, null, false, $ctx->userId, 'optical_order', $id, $order['walkin_id'] === null ? null : (int) $order['walkin_id']
+            );
+            Database::execute(
+                'UPDATE optical_orders SET bill_id = :b, total_amount = :t, updated_at = UTC_TIMESTAMP(3), updated_by = :by, row_version = row_version + 1 WHERE id = :id',
+                ['b' => $billId, 't' => $total, 'by' => $ctx->userId, 'id' => $id]
+            );
+            self::recordLensChange($id, ['set_no' => $setNo, 'label' => $label, 'before' => $beforeLenses, 'after' => $after, 'reason' => $reason],
+                'order', (int) $bill['id'], $ctx->userId);
+            self::refreshStatus($id, $ctx->userId);
+            return self::show($id, $ctx) + ['old_bill_no' => $bill['bill_no']];
+        });
+    }
+
+    /** @return list<array{price_item_id:int, name:string, unit_price:float}> active lenses from the price list, at today's price */
+    private static function lensItemsById(array $ids): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if ($ids === []) {
+            throw HttpException::validation(['lens_ids' => 'Choose at least one lens.']);
+        }
+        $out = [];
+        foreach ($ids as $lensId) {
+            $item = Database::one("SELECT id, name, unit_price FROM price_items WHERE id = :id AND category = 'lens' AND is_active = 1", ['id' => $lensId])
+                ?? throw HttpException::validation(['lens_ids' => 'A lens is no longer on the price list.']);
+            $out[] = ['price_item_id' => (int) $item['id'], 'name' => $item['name'], 'unit_price' => (float) $item['unit_price']];
+        }
+        return $out;
+    }
+
+    private static function sameLenses(array $a, array $b): bool
+    {
+        $ids = static function (array $list): array {
+            $out = array_map(static fn (array $l) => (int) $l['price_item_id'], $list);
+            sort($out);
+            return $out;
+        };
+        return $ids($a) === $ids($b);
+    }
+
+    private static function recordLensChange(int $orderId, array $change, string $stage, ?int $oldBillId, int $userId): void
+    {
+        $names = static fn (array $list) => mb_substr(implode(', ', array_map(static fn (array $l) => preg_replace('/^.* — /u', '', $l['name']), $list)), 0, 500);
+        $sum = static fn (array $list) => round(array_sum(array_map(static fn (array $l) => (float) $l['unit_price'], $list)), 2);
+        Database::execute(
+            'INSERT INTO optical_lens_changes (order_id, set_no, rx_label, stage, from_lenses, to_lenses, from_amount, to_amount, reason_enc, old_bill_id, changed_at, changed_by)
+             VALUES (:o, :s, :l, :stage, :from, :to, :fa, :ta, :r, :bill, UTC_TIMESTAMP(3), :by)',
+            [
+                'o' => $orderId, 's' => $change['set_no'], 'l' => $change['label'], 'stage' => $stage,
+                'from' => $names($change['before']), 'to' => $names($change['after']),
+                'fa' => $sum($change['before']), 'ta' => $sum($change['after']),
+                'r' => Crypto::encrypt($change['reason'], 'optical_lens_changes.reason'), 'bill' => $oldBillId, 'by' => $userId,
+            ]
+        );
+    }
+
+    public static function lensChanges(int $orderId): array
+    {
+        return array_map(static fn (array $r) => [
+            'set_no' => $r['set_no'] === null ? null : (int) $r['set_no'], 'rx_label' => $r['rx_label'], 'stage' => $r['stage'],
+            'from' => $r['from_lenses'], 'to' => $r['to_lenses'], 'from_amount' => (float) $r['from_amount'], 'to_amount' => (float) $r['to_amount'],
+            'reason' => Crypto::decrypt($r['reason_enc'], 'optical_lens_changes.reason'), 'old_bill_no' => $r['old_bill_no'],
+            'changed_at' => Format::utc($r['changed_at']), 'changed_by' => $r['changed_by_name'],
+        ], Database::all(
+            "SELECT c.*, ob.bill_no AS old_bill_no, TRIM(CONCAT_WS(' ', u.first_name, u.last_name)) AS changed_by_name
+               FROM optical_lens_changes c JOIN users u ON u.id = c.changed_by LEFT JOIN bills ob ON ob.id = c.old_bill_id
+              WHERE c.order_id = :o ORDER BY c.changed_at, c.id",
+            ['o' => $orderId]
+        ));
     }
 
     /** Supplier and production tracking; the status follows from the dates and the bill. */

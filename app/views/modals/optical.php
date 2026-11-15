@@ -255,3 +255,36 @@
     </div>
   </div>
 </div>
+
+<!-- ══ CHANGE THE LENS (patient's choice; confirm page or an unpaid order not yet with the supplier) ══ -->
+<div class="modal-overlay" id="modal-opt-change-lens">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Change lens</div>
+        <div class="modal-subtitle">The prescription stays as Optometry recorded it; only the lens changes, at its price-list price.</div>
+      </div>
+      <button class="modal-close" type="button" onclick="closeModal('modal-opt-change-lens')" aria-label="Close">&times;</button>
+    </div>
+    <form class="modal-body" id="opt-lens-form" novalidate onsubmit="event.preventDefault()">
+      <div class="cl-note" id="opt-lens-info"></div>
+      <div class="form-group" data-field="set_no" id="opt-lens-set-group" style="margin-top:12px">
+        <label class="form-label" for="opt-lens-set">Which pair <span class="required">*</span></label>
+        <select class="form-select" id="opt-lens-set" onchange="optLensSetChanged()"></select>
+      </div>
+      <div class="form-group" data-field="lens_ids" style="margin-top:12px">
+        <label class="form-label">New lens <span class="required">*</span></label>
+        <div id="opt-lens-list" style="max-height:260px;overflow-y:auto"></div>
+      </div>
+      <div id="opt-lens-total"></div>
+      <div class="form-group" data-field="reason">
+        <label class="form-label" for="opt-lens-reason">Reason <span class="required">*</span></label>
+        <textarea class="form-input" rows="2" id="opt-lens-reason" maxlength="500" placeholder="e.g. Patient prefers photochromic lenses"></textarea>
+      </div>
+    </form>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" type="button" onclick="closeModal('modal-opt-change-lens')">Cancel</button>
+      <button class="btn btn-primary" type="button" id="opt-lens-save" onclick="optSubmitLensChange(this)">Change lens</button>
+    </div>
+  </div>
+</div>

@@ -1,7 +1,8 @@
 #!/bin/sh
 # Every suite, in the order each one's data needs. Run from anywhere.
 cd "$(dirname "$0")"
-run() { echo "== $1"; shift; "$@"; }
+run() { name="$1"; echo "== $name"; shift; "$@" || { echo "FAILED: $name"; FAILED="$FAILED
+  $name"; }; }
 
 sh reset.sh >/dev/null 2>&1
 run "file numbers"        node file-numbers.mjs
@@ -29,4 +30,9 @@ run "results api"         node results-history.mjs
 run "results browser"     node results-history-browser.mjs
 run "optometry orders"     node optometry-orders.mjs
 run "optometry browser"    node optometry-orders-browser.mjs
+run "lens change api"     node lens-change.mjs
+run "lens change browser" node lens-change-browser.mjs
 run "all screens"         node smoke-modules.mjs
+
+if [ -n "$FAILED" ]; then printf "\nSuites that failed or crashed:%b\n" "$FAILED"; exit 1; fi
+echo "All suites passed."

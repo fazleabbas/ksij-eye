@@ -220,9 +220,45 @@ final class OpticalController
         if ($frames === [] && ($v['frame_id'] ?? null) !== null) {
             $frames[1] = (int) $v['frame_id'];
         }
-        $order = OpticalService::createOrder((int) $v['assessment_id'], $frames, $ctx);
+        // Lenses the patient wants instead of Optometry's: [{set_no, lens_ids, reason}], a reason each.
+        $lensChanges = [];
+        foreach (is_array($body['lenses'] ?? null) ? $body['lenses'] : [] as $i => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $reason = trim((string) ($row['reason'] ?? ''));
+            if (mb_strlen($reason) < 3 || mb_strlen($reason) > 500) {
+                throw HttpException::validation(["lenses.$i.reason" => 'Say why the lens is being changed.', 'lens_reason' => 'Say why the lens is being changed.']);
+            }
+            $lensChanges[max(1, (int) ($row['set_no'] ?? 1))] = [
+                'lens_ids' => array_values(array_filter(array_map('intval', is_array($row['lens_ids'] ?? null) ? $row['lens_ids'] : []))),
+                'reason' => $reason,
+            ];
+        }
+        $order = OpticalService::createOrder((int) $v['assessment_id'], $frames, $ctx, $lensChanges);
         Audit::log('optical', 'optical.order_created',
-            "Raised spectacle order {$order['order_no']} — bill {$order['bill']['bill_no']}", 'optical_order', $order['order_no']);
+            "Raised spectacle order {$order['order_no']} — bill {$order['bill']['bill_no']}"
+            . ($lensChanges ? ' (lens changed from the one Optometry chose)' : ''), 'optical_order', $order['order_no']);
+        return ['order' => $order];
+    }
+
+    /** The patient wants another lens on an order not yet sent to the supplier and not paid. */
+    public function changeLens(Request $request, array $params): array
+    {
+        $ctx = Auth::require();
+        $body = $request->all();
+        $v = Validator::make($body)
+            ->int('set_no', false, 1, 1000)
+            ->string('reason', true, 500, 3)
+            ->int('row_version', true, 1)
+            ->validate();
+        $lensIds = array_values(array_filter(array_map('intval', is_array($body['lens_ids'] ?? null) ? $body['lens_ids'] : [])));
+        $order = OpticalService::changeLens((int) $params['id'], $v['set_no'] ?? null, $lensIds, $v['reason'], (int) $v['row_version'], $ctx);
+        $change = end($order['lens_changes']);
+        Audit::log('optical', 'optical.lens_changed',
+            "Changed the lens on {$order['order_no']}: {$change['from']} → {$change['to']} — bill {$order['old_bill_no']} replaced by {$order['bill']['bill_no']}",
+            'optical_order', $order['order_no']);
+        unset($order['old_bill_no']);
         return ['order' => $order];
     }
 
