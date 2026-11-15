@@ -178,6 +178,7 @@ return static function (Router $r): void {
     $r->add('POST', '/optical/external',                 [OpticalController::class, 'storeExternal'],       'optical.orders.manage');
     $r->add('POST', '/optical/orders/{id}/change-frame', [OpticalController::class, 'changeFrame'],         'optical.orders.manage');
     $r->add('POST', '/optical/orders/{id}/lenses',       [OpticalController::class, 'changeLens'],          'optical.orders.manage');
+    $r->add('POST', '/optical/referrals/{id}/close-waiting', [OpticalController::class, 'closeWaiting'],    'optical.orders.manage');
     $r->add('POST', '/optical/orders/{id}/extra-pair',   [OpticalController::class, 'extraPair'],           'optical.orders.manage');
     $r->add('GET',  '/optical/frames',                   [OpticalController::class, 'frames'],              'optical.view');
     $r->add('POST', '/optical/frames',                   [OpticalController::class, 'storeFrame'],          'optical.frames.manage');

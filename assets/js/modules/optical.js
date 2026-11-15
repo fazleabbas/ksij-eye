@@ -113,14 +113,18 @@ function optRenderIncoming() {
       <td>${KSI.esc(r.visit_no)}</td>
       <td>${KSI.fmtDateTime(r.prescription_date)}</td>
       <td>${KSI.esc(r.optometrist)}</td>
-      <td>${r.lenses.length ? KSI.esc(optLensSummary(r.lenses)) : '<span class="muted-note">No lens recorded</span>'}</td>
+      <td>${r.lenses.length ? KSI.esc(optLensSummary(r.lenses)) : '<span class="muted-note">No lens recorded</span>'}
+        ${r.waiting ? `<div class="muted-note" style="margin-top:4px"><span class="badge badge-pending">Waiting since ${KSI.fmtDate(r.waiting[0].since)}</span>
+          Ordered earlier: ${KSI.esc((r.ordered_orders || []).join(', '))}</div>` : ''}</td>
       <td class="money">${r.lenses.length ? optMoney(total) : '—'}</td>
       <td>
         <div class="row-actions">
           <button class="action-btn action-view" onclick="optViewRx(${r.assessment_id})">View Rx</button>
           ${r.lenses.length && KSI.can('optical.orders.manage')
-            ? `<button class="action-btn action-edit" onclick="optOpenConfirm(${r.assessment_id})">Confirm order</button>`
+            ? `<button class="action-btn action-edit" onclick="optOpenConfirm(${r.assessment_id})">${r.waiting ? 'Order waiting pairs' : 'Confirm order'}</button>`
             : ''}
+          ${r.waiting && KSI.can('optical.orders.manage')
+            ? `<button class="action-btn action-cancel" onclick="optCloseWaiting(${r.assessment_id})">Close</button>` : ''}
         </div>
       </td>
     </tr>`;
@@ -281,8 +285,12 @@ async function optOpenConfirm(assessmentId) {
   showModule('opt-create');
   document.getElementById('opt-create-rx').innerHTML = `<div class="card-head"><div class="card-title">Prescription</div></div>${optRxHtml(prescription)}`;
   // One pair per prescription, all on this order and its one bill; each pair may take a frame.
-  const sets = optRxSets(prescription).filter(set => (set.lenses || []).length);
-  sets.forEach(set => { set.original = set.lenses; });
+  let sets = optRxSets(prescription).filter(set => (set.lenses || []).length);
+  // Partly ordered earlier: only the waiting pairs, at the lens price locked back then.
+  if (referral.waiting) {
+    sets = referral.waiting.map(pair => ({ ...(sets.find(s => s.set_no === pair.set_no) || {}), set_no: pair.set_no, label: pair.label, lenses: pair.lenses }));
+  }
+  sets.forEach(set => { set.original = set.lenses; set.now = true; });
   OPT.referral.sets = sets;
   OPT.lensEdits = {};
   document.getElementById('opt-create-order').innerHTML = `
@@ -293,15 +301,20 @@ async function optOpenConfirm(assessmentId) {
       <div><span class="pcd-label">Visit</span><span class="pcd-value">${KSI.esc(referral.visit_no)}</span></div>
       <div><span class="pcd-label">Optometrist</span><span class="pcd-value">${KSI.esc(referral.optometrist)}</span></div>
     </div>
+    ${referral.waiting ? `<div class="alert alert-info" style="margin-top:12px">Ordered earlier: ${KSI.esc((referral.ordered_orders || []).join(', '))}.
+      These pairs were left for later; their lens price is the one locked on the first order.</div>` : ''}
     ${sets.map((set, i) => `
-      <div class="form-label" style="margin-top:14px">${KSI.esc(sets.length > 1 ? optSetTitle(set, i, sets.length) : 'Lens — chosen by the optometrist')}</div>
+      <div class="form-label" style="margin-top:14px;display:flex;align-items:center;gap:10px">${KSI.esc(sets.length > 1 ? optSetTitle(set, i, sets.length) : 'Lens — chosen by the optometrist')}
+        ${sets.length > 1 ? `<label class="ur-perm-check" style="margin-left:auto;font-weight:500;text-transform:none">
+          <input type="checkbox" data-now="${set.set_no}" checked onchange="optTogglePairNow(${set.set_no}, this.checked)"><span>Order now</span></label>` : ''}</div>
       <div id="opt-create-lens-${set.set_no}">${optConfirmLensHtml(set)}</div>
       <div class="form-group" data-field="frames" style="margin-top:8px">
         <label class="form-label" for="opt-create-frame-${set.set_no}">Frame from us (${optMoney(OPT.options.frame_prices.patient)})</label>
         <select class="form-select" id="opt-create-frame-${set.set_no}" data-set="${set.set_no}" onchange="optConfirmTotal()"></select>
       </div>`).join('')}
-    <div class="muted-note">Lens prices come from the price list. If the patient wants another lens, use "Change lens" — the prescription stays as Optometry recorded it.</div>
-    <div class="opt-price-box" style="margin-top:10px"><div>Total to pay${sets.length > 1 ? ` — ${sets.length} pairs, one bill` : ''}</div><div class="opt-price-amount" id="opt-create-total"></div></div>
+    <div class="muted-note">Lens prices come from the price list. If the patient wants another lens, use "Change lens" — the prescription stays as Optometry recorded it.
+      ${sets.length > 1 ? 'Untick "Order now" for a pair the patient will take later: it stays in Incoming Prescriptions, its lens price locked as of today.' : ''}</div>
+    <div class="opt-price-box" style="margin-top:10px"><div id="opt-create-total-label">Total to pay</div><div class="opt-price-amount" id="opt-create-total"></div></div>
     <div class="alert alert-info" style="margin-top:12px">Confirming raises the bill and sends it to the cashier. The spectacles are handed over once it is paid.</div>
     <div class="modal-footer" style="padding:16px 0 0">
       <button class="btn btn-secondary" onclick="showModule('opt-incoming')">Cancel</button>
@@ -313,7 +326,35 @@ async function optOpenConfirm(assessmentId) {
 
 function optConfirmFrames() {
   return [...document.querySelectorAll('#opt-create-order select[data-set]')]
-    .filter(select => select.value).map(select => ({ set_no: Number(select.dataset.set), frame_id: Number(select.value) }));
+    .filter(select => select.value && !select.disabled).map(select => ({ set_no: Number(select.dataset.set), frame_id: Number(select.value) }));
+}
+
+/** A pair the patient takes later: no lens change or frame now, and not on today's bill. */
+function optTogglePairNow(setNo, now) {
+  const set = OPT.referral.sets.find(x => x.set_no === setNo);
+  set.now = now;
+  const frame = document.getElementById(`opt-create-frame-${setNo}`);
+  if (frame) frame.disabled = !now;
+  const box = document.getElementById(`opt-create-lens-${setNo}`);
+  if (box) box.style.opacity = now ? '' : '.45';
+  box?.querySelectorAll('button').forEach(b => { b.disabled = !now; });
+  optConfirmTotal();
+}
+
+async function optCloseWaiting(assessmentId) {
+  const reason = prompt('Why will the waiting pairs not be ordered? (e.g. no longer wanted)');
+  if (reason === null) return;
+  if (reason.trim().length < 3) {
+    showToast('Reason needed', 'Say why the waiting pairs are being closed.', 'error');
+    return;
+  }
+  try {
+    const { closed } = await KSI.post(`optical/referrals/${assessmentId}/close-waiting`, { reason: reason.trim() });
+    showToast('Closed', `${closed} waiting pair${closed === 1 ? '' : 's'} closed.`, 'success');
+    await optLoadIncoming();
+  } catch (error) {
+    KSI.reportError(error, null, 'Could not close the waiting pairs');
+  }
 }
 
 /** A pair's lens on the confirm page: Optometry's choice, or the patient's changed choice with its reason. */
@@ -442,8 +483,11 @@ async function optSubmitLensChange(button) {
 }
 
 function optConfirmTotal() {
-  const lenses = OPT.referral.sets.reduce((sum, set) => sum + set.lenses.reduce((s2, l) => s2 + l.unit_price, 0), 0);
+  const lenses = OPT.referral.sets.filter(set => set.now).reduce((sum, set) => sum + set.lenses.reduce((s2, l) => s2 + l.unit_price, 0), 0);
   const frames = optConfirmFrames().length * OPT.options.frame_prices.patient;
+  const pairs = OPT.referral.sets.filter(set => set.now).length;
+  const label = document.getElementById('opt-create-total-label');
+  if (label) label.textContent = `Total to pay${pairs > 1 ? ` — ${pairs} pairs, one bill` : ''}${pairs < OPT.referral.sets.length ? ` (${OPT.referral.sets.length - pairs} for later)` : ''}`;
   document.getElementById('opt-create-total').textContent = optMoney(lenses + frames);
 }
 
@@ -452,8 +496,15 @@ async function optConfirmOrder(button) {
   KSI.clearFieldErrors(page);
   await admBusy(button, async () => {
     try {
-      const lenses = Object.entries(OPT.lensEdits || {}).map(([setNo, edit]) => ({ set_no: Number(setNo), lens_ids: edit.lens_ids, reason: edit.reason }));
-      const { order } = await KSI.post('optical/orders', { assessment_id: OPT.referral.assessment_id, frames: optConfirmFrames(), lenses });
+      const setNos = OPT.referral.sets.filter(set => set.now).map(set => set.set_no);
+      if (!setNos.length) {
+        KSI.showFieldErrors(page, { pairs: 'Tick at least one pair to order now.' });
+        showToast('Nothing to order', 'Tick at least one pair to order now.', 'error');
+        return;
+      }
+      const lenses = Object.entries(OPT.lensEdits || {}).filter(([setNo]) => setNos.includes(Number(setNo)))
+        .map(([setNo, edit]) => ({ set_no: Number(setNo), lens_ids: edit.lens_ids, reason: edit.reason }));
+      const { order } = await KSI.post('optical/orders', { assessment_id: OPT.referral.assessment_id, frames: optConfirmFrames(), lenses, set_nos: setNos });
       showToast('Order raised', `${order.order_no} — bill ${order.bill.bill_no} sent to the cashier.`, 'success');
       OPT.options = null;
       showModule('opt-active');

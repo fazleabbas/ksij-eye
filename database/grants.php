@@ -63,6 +63,8 @@ return [
     'optical_orders'              => ['SELECT', 'INSERT', 'UPDATE'],
     'optical_order_items'         => ['SELECT', 'INSERT', 'DELETE'],
     'optical_lens_changes'        => ['SELECT', 'INSERT'],
+    'optical_waiting_pairs'       => ['SELECT', 'INSERT', 'UPDATE'],
+    'optical_waiting_pair_lenses' => ['SELECT', 'INSERT'],
     'frames'                      => ['SELECT', 'INSERT', 'UPDATE'],
     'optical_frame_stock'         => ['SELECT', 'INSERT', 'UPDATE'],
 

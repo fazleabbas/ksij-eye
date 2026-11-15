@@ -235,11 +235,25 @@ final class OpticalController
                 'reason' => $reason,
             ];
         }
-        $order = OpticalService::createOrder((int) $v['assessment_id'], $frames, $ctx, $lensChanges);
+        // The pairs ordered now ([set_no, …]); left out = all. The rest wait in Incoming.
+        $setNos = is_array($body['set_nos'] ?? null) ? array_values(array_filter(array_map('intval', $body['set_nos']))) : null;
+        $order = OpticalService::createOrder((int) $v['assessment_id'], $frames, $ctx, $lensChanges, $setNos);
         Audit::log('optical', 'optical.order_created',
             "Raised spectacle order {$order['order_no']} — bill {$order['bill']['bill_no']}"
             . ($lensChanges ? ' (lens changed from the one Optometry chose)' : ''), 'optical_order', $order['order_no']);
         return ['order' => $order];
+    }
+
+    /** The patient will not order the pairs still waiting on a prescription. */
+    public function closeWaiting(Request $request, array $params): array
+    {
+        $ctx = Auth::require();
+        $v = Validator::make($request->all())->string('reason', true, 500, 3)->validate();
+        $assessmentId = (int) $params['id'];
+        $count = OpticalService::closeWaiting($assessmentId, $v['reason'], $ctx);
+        $visitNo = (string) Database::value('SELECT v.visit_no FROM optometry_assessments a JOIN visits v ON v.id = a.visit_id WHERE a.id = :a', ['a' => $assessmentId]);
+        Audit::log('optical', 'optical.waiting_closed', "Closed $count waiting pair" . ($count === 1 ? '' : 's') . " of visit $visitNo", 'visit', $visitNo);
+        return ['closed' => $count];
     }
 
     /** The patient wants another lens on an order not yet sent to the supplier and not paid. */

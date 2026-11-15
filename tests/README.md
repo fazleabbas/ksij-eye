@@ -23,6 +23,8 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `lens-change-browser.mjs` | The same on screen |
 | `pharmacy-balance.mjs` | Take part of a prescription now, collect the balance later at the locked price; cancelled part returns to the balance; close balance |
 | `pharmacy-balance-browser.mjs` | The same on screen: review note, Balance to Collect, Supply balance |
+| `optical-waiting.mjs` | Order some spectacle pairs now, the rest later at the locked lens price; cancelled later order returns its pair; close waiting pairs |
+| `optical-waiting-browser.mjs` | The same on screen: Order now ticks, waiting pair in Incoming |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

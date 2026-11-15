@@ -34,6 +34,8 @@ run "lens change api"     node lens-change.mjs
 run "lens change browser" node lens-change-browser.mjs
 run "pharmacy balance api" node pharmacy-balance.mjs
 run "pharmacy balance browser" node pharmacy-balance-browser.mjs
+run "optical waiting api"  node optical-waiting.mjs
+run "optical waiting browser" node optical-waiting-browser.mjs
 run "all screens"         node smoke-modules.mjs
 
 if [ -n "$FAILED" ]; then printf "\nSuites that failed or crashed:%b\n" "$FAILED"; exit 1; fi

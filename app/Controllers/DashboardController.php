@@ -155,8 +155,10 @@ final class DashboardController
         ]);
         $add($sections, 'optical.view', $ctx, 'Optical', 'opt-incoming', [
             ['label' => 'Prescriptions to order', 'value' => $count(
-                "SELECT COUNT(*) FROM optometry_assessments a LEFT JOIN optical_orders o ON o.assessment_id = a.id
-                  WHERE a.status = 'completed' AND a.refer_optical = 1 AND o.id IS NULL"
+                "SELECT COUNT(*) FROM optometry_assessments a
+                  WHERE a.status = 'completed' AND a.refer_optical = 1
+                    AND (NOT EXISTS (SELECT 1 FROM optical_orders o WHERE o.assessment_id = a.id)
+                      OR EXISTS (SELECT 1 FROM optical_waiting_pairs wp WHERE wp.assessment_id = a.id AND wp.status = 'waiting'))"
             )],
             ['label' => 'Ready to hand over', 'value' => $count("SELECT COUNT(*) FROM optical_orders WHERE status = 'ready_for_dispensing'")],
         ]);

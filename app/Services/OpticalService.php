@@ -58,7 +58,9 @@ final class OpticalService
      */
     public static function incoming(array $filters): array
     {
-        $where = ["a.status = 'completed'", 'a.refer_optical = 1', 'o.id IS NULL'];
+        // Not ordered yet, or ordered in part with pairs still waiting.
+        $where = ["a.status = 'completed'", 'a.refer_optical = 1',
+            "(o.id IS NULL OR EXISTS (SELECT 1 FROM optical_waiting_pairs wp WHERE wp.assessment_id = a.id AND wp.status = 'waiting'))"];
         $params = [];
         if (($filters['from'] ?? '') !== '') {
             $where[] = 'a.completed_at >= :from';
@@ -76,7 +78,8 @@ final class OpticalService
                JOIN visits v ON v.id = a.visit_id
                JOIN patients p ON p.id = v.patient_id
                LEFT JOIN users u ON u.id = a.completed_by
-               LEFT JOIN optical_orders o ON o.assessment_id = a.id
+               LEFT JOIN optical_orders o ON o.assessment_id = a.id AND o.order_type = 'referral'
+                    AND o.id = (SELECT MIN(o2.id) FROM optical_orders o2 WHERE o2.assessment_id = a.id AND o2.order_type = 'referral')
               WHERE " . implode(' AND ', $where) . '
               ORDER BY v.is_emergency DESC, v.is_fast_track DESC, a.completed_at
               LIMIT 300',
@@ -92,6 +95,19 @@ final class OpticalService
             'patient' => PatientService::brief($r) + ['id' => (int) $r['patient_id']],
             'lenses' => self::lensChoice((int) $r['assessment_id']),
         ], $rows);
+        // Partly ordered: offer only the waiting pairs, at their locked price.
+        foreach ($referrals as &$referral) {
+            $waiting = self::waitingPairs($referral['assessment_id']);
+            $referral['waiting'] = $waiting === [] ? null : $waiting;
+            if ($waiting !== []) {
+                $referral['lenses'] = array_merge(...array_map(static fn (array $pair) => $pair['lenses'], $waiting));
+                $referral['ordered_orders'] = array_column(Database::all(
+                    "SELECT order_no FROM optical_orders WHERE assessment_id = :a AND order_type = 'referral' AND status <> 'cancelled' ORDER BY id",
+                    ['a' => $referral['assessment_id']]
+                ), 'order_no');
+            }
+        }
+        unset($referral);
         return self::searchFilter($referrals, (string) ($filters['search'] ?? ''));
     }
 
@@ -441,12 +457,14 @@ final class OpticalService
     }
 
     /**
-     * Confirms the referral as one order for every prescription in the visit, with a frame for
-     * each pair the patient takes one for ([set_no => frame_id]), and raises one cashier bill.
+     * Confirms the referral as one order for the pairs the patient takes now ($setNos; null = all),
+     * with a frame for each pair that takes one ([set_no => frame_id]), and raises one cashier bill.
+     * Pairs left out wait in Incoming at the lens price of today; ordering them later uses that
+     * locked price (a lens changed then is priced on that day).
      */
-    public static function createOrder(int $assessmentId, array $frameIdsBySet, AuthContext $ctx, array $lensChanges = []): array
+    public static function createOrder(int $assessmentId, array $frameIdsBySet, AuthContext $ctx, array $lensChanges = [], ?array $setNos = null): array
     {
-        return Database::transaction(function () use ($assessmentId, $frameIdsBySet, $ctx, $lensChanges): array {
+        return Database::transaction(function () use ($assessmentId, $frameIdsBySet, $ctx, $lensChanges, $setNos): array {
             $assessment = Database::one(
                 "SELECT a.id, a.visit_id, a.status, a.refer_optical, v.patient_id
                    FROM optometry_assessments a JOIN visits v ON v.id = a.visit_id
@@ -456,14 +474,34 @@ final class OpticalService
             if ($assessment['status'] !== 'completed' || (int) $assessment['refer_optical'] !== 1) {
                 throw HttpException::conflict('not_referred', 'This patient has not been referred to the optical room.');
             }
-            if (Database::value('SELECT 1 FROM optical_orders WHERE assessment_id = :a', ['a' => $assessmentId])) {
-                throw HttpException::conflict('already_ordered', 'An order has already been raised for this prescription.');
+            // First order on this prescription, or a later one for pairs left waiting.
+            $later = (bool) Database::value("SELECT 1 FROM optical_orders WHERE assessment_id = :a AND order_type = 'referral'", ['a' => $assessmentId]);
+            if ($later) {
+                $waiting = self::waitingPairs($assessmentId, true);
+                if ($waiting === []) {
+                    throw HttpException::conflict('already_ordered', 'Every pair on this prescription has already been ordered.');
+                }
+                $lenses = array_merge(...array_map(static fn (array $pair) => $pair['lenses'], $waiting));
+            } else {
+                $lenses = self::lensChoice($assessmentId);
             }
-            $lenses = self::lensChoice($assessmentId);
             if ($lenses === []) {
                 throw HttpException::conflict('no_lens', 'Optometry did not record a lens. Send the prescription back to optometry.');
             }
             $labels = array_column($lenses, 'label', 'set_no');
+            // Which pairs the patient takes now; the others wait (first order) or keep waiting.
+            $available = array_map('intval', array_keys($labels));
+            $chosen = $setNos === null ? $available : array_values(array_unique(array_map('intval', $setNos)));
+            if (array_diff($chosen, $available)) {
+                throw HttpException::validation(['pairs' => 'A chosen pair is not waiting on this prescription.']);
+            }
+            if ($chosen === []) {
+                throw HttpException::validation(['pairs' => 'Choose at least one pair to order now.']);
+            }
+            $allLenses = $lenses;
+            $lenses = array_values(array_filter($lenses, static fn (array $l) => in_array($l['set_no'], $chosen, true)));
+            $lensChanges = array_filter($lensChanges, static fn ($setNo) => in_array((int) $setNo, $chosen, true), ARRAY_FILTER_USE_KEY);
+            $frameIdsBySet = array_filter($frameIdsBySet, static fn ($setNo) => in_array((int) $setNo, $chosen, true), ARRAY_FILTER_USE_KEY);
             // The patient wants another lens for a pair: [set_no => {lens_ids, reason}].
             $changes = [];
             foreach ($lensChanges as $setNo => $change) {
@@ -501,7 +539,69 @@ final class OpticalService
             foreach ($changes as $change) {
                 self::recordLensChange($orderId, $change, 'confirm', null, $ctx->userId);
             }
+            if ($later) {
+                [$in, $params] = Database::in('s', $chosen);
+                Database::execute(
+                    "UPDATE optical_waiting_pairs SET status = 'ordered', order_id = :o WHERE assessment_id = :a AND status = 'waiting' AND set_no IN ($in)",
+                    $params + ['o' => $orderId, 'a' => $assessmentId]
+                );
+            } else {
+                // The pairs not taken now wait, their lens price locked as of today.
+                foreach (array_diff($available, $chosen) as $setNo) {
+                    $pairId = Database::insert(
+                        'INSERT INTO optical_waiting_pairs (assessment_id, set_no, rx_label, first_order_id, created_at, created_by)
+                         VALUES (:a, :s, :l, :o, UTC_TIMESTAMP(3), :by)',
+                        ['a' => $assessmentId, 's' => $setNo, 'l' => $labels[$setNo], 'o' => $orderId, 'by' => $ctx->userId]
+                    );
+                    foreach (array_filter($allLenses, static fn (array $l) => $l['set_no'] === $setNo) as $lens) {
+                        Database::execute(
+                            'INSERT INTO optical_waiting_pair_lenses (pair_id, price_item_id, name, unit_price) VALUES (:p, :i, :n, :u)',
+                            ['p' => $pairId, 'i' => $lens['price_item_id'], 'n' => mb_substr($lens['name'], 0, 190), 'u' => $lens['unit_price']]
+                        );
+                    }
+                }
+            }
             return self::present(self::find($orderId));
+        });
+    }
+
+    // ─── Pairs left to order later ───────────────────────────────────────
+
+    /**
+     * Pairs of a prescription waiting to be ordered, each with its lenses at the locked price,
+     * in the same shape as lensChoice().
+     *
+     * @return list<array{id:int, set_no:int, label:?string, since:?string, lenses:list<array>}>
+     */
+    public static function waitingPairs(int $assessmentId, bool $lock = false): array
+    {
+        $pairs = Database::all(
+            "SELECT id, set_no, rx_label, created_at FROM optical_waiting_pairs WHERE assessment_id = :a AND status = 'waiting' ORDER BY set_no"
+            . ($lock ? ' FOR UPDATE' : ''),
+            ['a' => $assessmentId]
+        );
+        return array_map(static fn (array $p) => [
+            'id' => (int) $p['id'], 'set_no' => (int) $p['set_no'], 'label' => $p['rx_label'], 'since' => Format::utc($p['created_at']),
+            'lenses' => array_map(static fn (array $l) => [
+                'price_item_id' => (int) $l['price_item_id'], 'name' => $l['name'], 'unit_price' => (float) $l['unit_price'],
+                'set_no' => (int) $p['set_no'], 'label' => $p['rx_label'],
+            ], Database::all('SELECT price_item_id, name, unit_price FROM optical_waiting_pair_lenses WHERE pair_id = :p ORDER BY name', ['p' => (int) $p['id']])),
+        ], $pairs);
+    }
+
+    /** The patient will not order the waiting pairs (no longer wanted, bought elsewhere); the reason is kept. */
+    public static function closeWaiting(int $assessmentId, string $reason, AuthContext $ctx): int
+    {
+        return Database::transaction(function () use ($assessmentId, $reason, $ctx): int {
+            $count = Database::execute(
+                "UPDATE optical_waiting_pairs SET status = 'closed', closed_at = UTC_TIMESTAMP(3), closed_by = :by, close_reason_enc = :r
+                  WHERE assessment_id = :a AND status = 'waiting'",
+                ['by' => $ctx->userId, 'r' => Crypto::encrypt($reason, 'optical_waiting_pairs.close_reason'), 'a' => $assessmentId]
+            );
+            if ($count === 0) {
+                throw HttpException::conflict('nothing_waiting', 'No pairs are waiting on this prescription.');
+            }
+            return $count;
         });
     }
 
@@ -832,6 +932,8 @@ final class OpticalService
                     updated_by = :by, row_version = row_version + 1 WHERE id = :id",
             ['by' => $ctx->userId, 'id' => $orderId]
         );
+        // Pairs this order took from the waiting list go back to waiting.
+        Database::execute("UPDATE optical_waiting_pairs SET status = 'waiting', order_id = NULL WHERE order_id = :o AND status = 'ordered'", ['o' => $orderId]);
         if ($order['bill_id'] !== null) {
             $bill = BillingService::lockBill((int) $order['bill_id']);
             if (in_array($bill['status'], ['pending', 'discount_requested'], true)) {
