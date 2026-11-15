@@ -216,9 +216,12 @@ async function thOpenBooking(bookingId = null, recommendationId = null) {
     document.getElementById('th-sched-date').value = uiToday();
     document.getElementById('th-sched-time').value = '08:00';
     thFillBiometry(null);
+    TH.bioCache = null;
+    document.getElementById('th-bio-source').style.display = 'none';
     if (recommendationId) thApplyRecommendation(recommendationId);
     thSetupPatientPicker();
   }
+  modal.querySelectorAll('input[name="th-eye"]').forEach(radio => { radio.onchange = thAutoBiometry; });
   thTimingChanged();
   thSurgeryChanged();
   thRenderProcedures();
@@ -252,6 +255,7 @@ function thSetupPatientPicker() {
     TH.visitId = null;
     document.getElementById('th-patient-card').innerHTML = uiPatientCard(patient);
     document.getElementById('th-patient-search').value = patient.full_name;
+    thAutoBiometry();
   });
 }
 
@@ -311,6 +315,7 @@ function thSurgeryChanged() {
   const block = document.getElementById('th-biometry-block');
   if (block) block.style.display = TH.biometryNeeded ? '' : 'none';
   thBookingTotal();
+  thAutoBiometry();
 }
 
 function thTimingChanged() {
@@ -328,7 +333,53 @@ function thFillBiometry(biometry) {
   set('th-bio-flat', biometry?.flat_k);
   set('th-bio-acd', biometry?.acd);
   set('th-bio-cct', biometry?.corneal_thickness);
+  set('th-bio-lt', biometry?.lens_thickness);
+  set('th-bio-wtw', biometry?.white_to_white);
   set('th-bio-remarks', biometry?.remarks);
+}
+
+/**
+ * New cataract booking: start from the patient's latest Optometry biometry for the chosen eye
+ * (however old; the date is shown). Theatre may change the figures; the booking keeps its own copy.
+ */
+async function thAutoBiometry() {
+  const note = document.getElementById('th-bio-source');
+  if (!note) return;
+  const patientId = TH.patient?.id;
+  const eye = uiRadioValue('th-eye');
+  // Editing keeps the booking's own figures.
+  if (TH.editing || !TH.biometryNeeded || !patientId || !eye) {
+    note.style.display = 'none';
+    return;
+  }
+  if (TH.bioCache?.patientId !== patientId) {
+    try {
+      const { biometry } = await KSI.get(`theatre/patients/${patientId}/biometry`);
+      TH.bioCache = { patientId, biometry };
+    } catch (error) {
+      note.style.display = 'none';
+      return;
+    }
+  }
+  // The patient, surgery or eye may have changed while waiting.
+  if (TH.patient?.id !== patientId || uiRadioValue('th-eye') !== eye || !TH.biometryNeeded) return;
+  const data = TH.bioCache.biometry;
+  const source = b => `Optometry, visit ${KSI.esc(b.visit_no)}, ${KSI.fmtDate(b.recorded_at)}${b.recorded_by ? ` by ${KSI.esc(b.recorded_by)}` : ''}`;
+  const summary = b => [b.axial_length != null && `AL ${b.axial_length}`, b.steep_k != null && `K1 ${b.steep_k}`, b.flat_k != null && `K2 ${b.flat_k}`,
+    b.iol_model && `IOL ${KSI.esc(b.iol_model)}`, b.iol_power != null && `${b.iol_power} D`].filter(Boolean).join(' · ');
+  note.style.display = '';
+  if (eye === 'both') {
+    thFillBiometry(null);
+    note.innerHTML = `<div><strong>Both eyes:</strong> enter the figures for this operation. From Optometry —
+      Right: ${data.right ? `${summary(data.right)} (${source(data.right)})` : 'none recorded'};
+      Left: ${data.left ? `${summary(data.left)} (${source(data.left)})` : 'none recorded'}.</div>`;
+    return;
+  }
+  const found = data[eye];
+  thFillBiometry(found);
+  note.innerHTML = found
+    ? `<div><strong>Filled from ${source(found)}.</strong> Check the figures and change them if needed — the Optometry record stays as it is.</div>`
+    : `<div>No biometry has been recorded in Optometry for the ${eye} eye. Enter it here.</div>`;
 }
 
 function thBiometryPayload() {
@@ -337,7 +388,8 @@ function thBiometryPayload() {
   return {
     iol_model: value('th-bio-model'), iol_power: value('th-bio-power'), axial_length: value('th-bio-axial'),
     a_constant: value('th-bio-constant'), steep_k: value('th-bio-steep'), flat_k: value('th-bio-flat'),
-    acd: value('th-bio-acd'), corneal_thickness: value('th-bio-cct'), remarks: value('th-bio-remarks'),
+    acd: value('th-bio-acd'), corneal_thickness: value('th-bio-cct'), lens_thickness: value('th-bio-lt'),
+    white_to_white: value('th-bio-wtw'), remarks: value('th-bio-remarks'),
   };
 }
 

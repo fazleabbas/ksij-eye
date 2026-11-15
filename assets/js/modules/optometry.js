@@ -57,6 +57,65 @@ const OPTO_FORM = {
         + clOphthalmologyReadout(fromDoctor)
       : '') + clTriageReadout(ws.upstream.triage);
     this.doctorReferral = !!fromDoctor;
+
+    // Investigations: drafts can change while editing; booked ones show their status and result.
+    const investigations = record?.investigations || [];
+    this.invs = investigations.filter(x => x.status === 'draft').map(x => ({
+      price_item_id: x.price_item_id, eye: x.eye, priority: x.priority, preferred_date: x.preferred_date || '', reason: x.reason || '',
+    }));
+    this.invSubmitted = investigations.filter(x => x.status !== 'draft');
+    document.getElementById('op-inv-card').style.display = CL_OPTIONS.data.can.request_optometry_investigations || investigations.length ? '' : 'none';
+    this.renderInvestigations();
+  },
+
+  // ── Investigations (booked at Diagnostics on completion, like the doctor's) ──
+  invs: [],
+  invSubmitted: [],
+
+  renderInvestigations() {
+    const opts = CL_OPTIONS.data;
+    const editable = this.mode === 'edit' && opts.can.request_optometry_investigations;
+    document.getElementById('op-inv-add').style.display = editable ? '' : 'none';
+    const dis = editable ? '' : ' disabled';
+    const options = (values, current, label) => values.map(v => `<option value="${v}"${current === v ? ' selected' : ''}>${KSI.esc(label(v))}</option>`).join('');
+    const submitted = this.invSubmitted.map(x => `<div class="inv-result-card"><div class="inv-result-header" style="cursor:default">
+      <div><div style="font-size:12px;font-weight:700">${KSI.esc(x.name)} · ${KSI.esc(uiLabel('eye', x.eye))}</div>
+        <div class="text-xs text-muted">${KSI.esc(x.request_no || '')} · ${KSI.esc(uiLabel('priority', x.priority))}</div>
+        <div class="text-xs">${KSI.esc(x.reason || '')}</div></div>
+      ${x.result_ready
+        ? `<div style="display:flex;gap:6px;align-items:center"><span class="badge badge-complete">Result ready</span>${KSI.can('ophthalmology.results.view')
+          ? `<button type="button" class="btn btn-secondary btn-sm" onclick="clResultOpen(${x.booking_id})">View result</button>` : ''}</div>`
+        : uiBadge('investigationStatus', x.status)}</div></div>`).join('');
+    const rows = this.invs.map((row, i) => {
+      const update = name => `OPTO_FORM.updateInvestigation(${i}, '${name}', this.value)`;
+      return `<div class="cl-order-row">
+        <div class="form-group"><label class="form-label">Investigation</label><select class="form-select" data-field="investigations.${i}.price_item_id" onchange="${update('price_item_id')}"${dis}>
+          <option value="">Choose…</option>${opts.investigation_items.map(it => `<option value="${it.id}"${Number(row.price_item_id) === it.id ? ' selected' : ''}>${KSI.esc(it.name)} — ${uiMoney(it.price)}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="form-label">Eye</label><select class="form-select" data-field="investigations.${i}.eye" onchange="${update('eye')}"${dis}><option value="">Choose…</option>${options(['right', 'left', 'both'], row.eye, v => uiLabel('eye', v))}</select></div>
+        <div class="form-group"><label class="form-label">Priority</label><select class="form-select" data-field="investigations.${i}.priority" onchange="${update('priority')}"${dis}>${options(['routine', 'urgent'], row.priority, v => uiLabel('priority', v))}</select></div>
+        <div class="form-group"><label class="form-label">Preferred date</label><input type="date" class="form-input" data-field="investigations.${i}.preferred_date" value="${KSI.esc(row.preferred_date || '')}" onchange="${update('preferred_date')}"${dis}></div>
+        <div class="form-group"><label class="form-label">Clinical reason</label><input class="form-input" maxlength="500" data-field="investigations.${i}.reason" value="${KSI.esc(row.reason || '')}" oninput="${update('reason')}"${dis}></div>
+        <div>${editable ? `<button type="button" class="btn btn-ghost btn-sm" style="margin-top:18px" onclick="OPTO_FORM.removeInvestigation(${i})">Remove</button>` : ''}</div>
+      </div>`;
+    }).join('');
+    document.getElementById('op-inv').innerHTML = submitted + rows || '<div class="text-xs text-muted">No investigations requested.</div>';
+  },
+
+  addInvestigation() {
+    this.invs.push({ price_item_id: '', eye: '', priority: 'routine', preferred_date: '', reason: '' });
+    this.renderInvestigations();
+    clMarkDirty('optometry');
+  },
+
+  updateInvestigation(index, field, value) {
+    this.invs[index][field] = value;
+    clMarkDirty('optometry');
+  },
+
+  removeInvestigation(index) {
+    this.invs.splice(index, 1);
+    this.renderInvestigations();
+    clMarkDirty('optometry');
   },
 
   /** After the form mode is applied: a doctor's referral leaves no referral to Ophthalmology to make. */
@@ -84,6 +143,7 @@ const OPTO_FORM = {
       final_icd_ids: CL_CHIPS['op-dx-final'].ids,
       lens_item_ids: CL_CHIPS['op-lens'].ids,
       prescription: clRxValue('op-rx'),
+      investigations: this.invs.map(row => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v === '' || v == null ? null : v]))),
       extra_rx: this.extra.map(x => ({
         label: x.label || null,
         refraction: Object.fromEntries(Object.entries(x.refraction).map(([k, v]) => [k, v === '' || v == null ? null : v])),

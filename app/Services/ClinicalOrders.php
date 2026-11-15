@@ -401,7 +401,10 @@ final class ClinicalOrders
 
     // ─── Investigation requests ──────────────────────────────────────────
 
-    public static function validateInvestigations(ClinicalInput $in, AuthContext $ctx): array
+    /** Which record column holds the request: the doctor's consultation or the optometry assessment. */
+    private const INVESTIGATION_RECORD = ['ophthalmology' => 'consultation_id', 'optometry' => 'assessment_id'];
+
+    public static function validateInvestigations(ClinicalInput $in, AuthContext $ctx, string $permission = 'ophthalmology.investigations.request'): array
     {
         $rows = [];
         foreach ($in->rows('investigations', 10) as $i => $_) {
@@ -420,7 +423,7 @@ final class ClinicalOrders
             }
             $rows[] = $row;
         }
-        if ($rows && !$ctx->can('ophthalmology.investigations.request')) {
+        if ($rows && !$ctx->can($permission)) {
             $in->error('investigations', 'You are not allowed to request investigations.');
         }
         $ids = array_values(array_unique(array_filter(array_column($rows, 'price_item_id'))));
@@ -430,16 +433,17 @@ final class ClinicalOrders
         return $rows;
     }
 
-    public static function saveInvestigationDrafts(int $consultationId, array $visit, array $rows, int $userId): void
+    public static function saveInvestigationDrafts(int $recordId, array $visit, array $rows, int $userId, string $source = 'ophthalmology'): void
     {
-        Database::execute("DELETE FROM investigation_requests WHERE consultation_id = :c AND status = 'draft'", ['c' => $consultationId]);
+        $column = self::INVESTIGATION_RECORD[$source];
+        Database::execute("DELETE FROM investigation_requests WHERE $column = :c AND status = 'draft'", ['c' => $recordId]);
         foreach ($rows as $row) {
             Database::execute(
-                "INSERT INTO investigation_requests (patient_id, visit_id, consultation_id, price_item_id, eye, priority, preferred_date, reason_enc,
+                "INSERT INTO investigation_requests (patient_id, visit_id, source, $column, price_item_id, eye, priority, preferred_date, reason_enc,
                                                      status, created_at, created_by)
-                 VALUES (:p, :v, :c, :item, :eye, :pr, :d, :reason, 'draft', UTC_TIMESTAMP(3), :by)",
+                 VALUES (:p, :v, :src, :c, :item, :eye, :pr, :d, :reason, 'draft', UTC_TIMESTAMP(3), :by)",
                 [
-                    'p' => (int) $visit['patient_id'], 'v' => (int) $visit['id'], 'c' => $consultationId, 'item' => $row['price_item_id'],
+                    'p' => (int) $visit['patient_id'], 'v' => (int) $visit['id'], 'src' => $source, 'c' => $recordId, 'item' => $row['price_item_id'],
                     'eye' => $row['eye'], 'pr' => $row['priority'], 'd' => $row['preferred_date'],
                     'reason' => Crypto::encrypt((string) $row['reason'], 'investigation_requests.reason'), 'by' => $userId,
                 ]
@@ -448,13 +452,14 @@ final class ClinicalOrders
     }
 
     /** Numbers the drafts and books each investigation at the diagnostic desk, unbilled. Returns how many were sent. */
-    public static function submitInvestigations(int $consultationId, int $userId): int
+    public static function submitInvestigations(int $recordId, int $userId, string $source = 'ophthalmology'): int
     {
+        $column = self::INVESTIGATION_RECORD[$source];
         $drafts = Database::all(
             "SELECT r.id, r.patient_id, r.visit_id, r.price_item_id, r.preferred_date, r.priority
                FROM investigation_requests r
-              WHERE r.consultation_id = :c AND r.status = 'draft' ORDER BY r.id FOR UPDATE",
-            ['c' => $consultationId]
+              WHERE r.$column = :c AND r.status = 'draft' ORDER BY r.id FOR UPDATE",
+            ['c' => $recordId]
         );
         $ctx = Auth::require();
         foreach ($drafts as $draft) {
@@ -480,7 +485,7 @@ final class ClinicalOrders
                     ]],
                 ],
                 $ctx,
-                'ophthalmology',
+                $source,
                 (int) $draft['visit_id'],
                 (int) $draft['id'],
             );
@@ -488,9 +493,10 @@ final class ClinicalOrders
         return count($drafts);
     }
 
-    public static function investigations(int $consultationId): array
+    public static function investigations(int $recordId, string $source = 'ophthalmology'): array
     {
-        return self::presentInvestigations(Database::all(self::INVESTIGATION_SELECT . ' WHERE r.consultation_id = :c ORDER BY r.id', ['c' => $consultationId]));
+        $column = self::INVESTIGATION_RECORD[$source];
+        return self::presentInvestigations(Database::all(self::INVESTIGATION_SELECT . " WHERE r.$column = :c ORDER BY r.id", ['c' => $recordId]));
     }
 
     public static function patientInvestigations(int $patientId): array

@@ -29,7 +29,7 @@ const UI_LABELS = {
     scheduled: 'Scheduled', arrived: 'Checked In', completed: 'Reported',
     cancellation_requested: 'Cancellation Requested', cancelled: 'Cancelled',
   },
-  diagnosticSource: { desk: 'Booked at the desk', ophthalmology: 'Requested by the doctor', visit: 'From a visit' },
+  diagnosticSource: { desk: 'Booked at the desk', ophthalmology: 'Requested by the doctor', visit: 'From a visit', optometry: 'Requested by optometry' },
   requisitionStatus: {
     draft: 'Draft', submitted: 'Sent To The Store', approved: 'Approved', rejected: 'Refused',
     partly_issued: 'Partly Issued', issued: 'Issued', cancelled: 'Cancelled',

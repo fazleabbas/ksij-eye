@@ -40,6 +40,8 @@ final class OptometryController extends ClinicalStageController
             'follow_up' => ClinicalOrders::validateFollowUp($in, $complete),
             'final_label' => self::rxLabel($in, 'final_label'),
             'extra_rx' => [],
+            'investigations' => ClinicalOrders::validateInvestigations($in, $ctx, 'optometry.investigations.request'),
+            'biometry' => self::biometryInput($in),
         ];
         foreach (self::TEXT_LIMITS as $field => $max) {
             $d[$field] = $in->text($field, $max);
@@ -144,7 +146,9 @@ final class OptometryController extends ClinicalStageController
             $diagnoses = ClinicalOrders::diagnoses('optometry', $id);
             $before['provisional_icd_ids'] = array_column($diagnoses['provisional'], 'id');
             $before['final_icd_ids'] = array_column($diagnoses['final'], 'id');
+            $before['biometry'] = self::biometry($id);
             $changes = ClinicalService::changedFields($before, $plain + $texts + [
+                'biometry' => $d['biometry'],
                 'refractions' => $d['refractions'], 'provisional_icd_ids' => $d['provisional_icd_ids'], 'final_icd_ids' => $d['final_icd_ids'],
                 'final_label' => $d['final_label'],
                 'extra_rx' => array_map(static fn (array $x) => ['label' => $x['label'], 'refraction' => $x['refraction']], $d['extra_rx']),
@@ -170,6 +174,8 @@ final class OptometryController extends ClinicalStageController
             }
         }
         ClinicalOrders::saveDiagnoses('optometry', $id, $visit, $d['provisional_icd_ids'], $d['final_icd_ids'], $ctx->userId);
+        // Biometry is a measurement, so a correction may change it too.
+        self::saveBiometry($id, $d['biometry']);
 
         if (!$correction) {
             Database::execute('DELETE FROM optometry_lens_items WHERE assessment_id = :a', ['a' => $id]);
@@ -185,6 +191,7 @@ final class OptometryController extends ClinicalStageController
             }
             ClinicalOrders::savePrescriptionDraft('optometry', $id, $visit, $d['prescription'], $ctx->userId);
             ClinicalOrders::saveFollowUpDraft('optometry', $id, $visit, $d['follow_up'], $ctx->userId);
+            ClinicalOrders::saveInvestigationDrafts($id, $visit, $d['investigations'], $ctx->userId, 'optometry');
         }
         return [$id, $changes];
     }
@@ -197,6 +204,9 @@ final class OptometryController extends ClinicalStageController
         }
         if (ClinicalOrders::activateFollowUp('optometry', $recordId, $ctx->userId)) {
             $parts[] = 'follow-up booked for reception';
+        }
+        if ($count = ClinicalOrders::submitInvestigations($recordId, $ctx->userId, 'optometry')) {
+            $parts[] = "$count investigation" . ($count === 1 ? '' : 's') . ' booked at Diagnostics';
         }
         if ($data['refer_optical']) {
             $parts[] = 'referred to the Optical Room';
@@ -236,6 +246,8 @@ final class OptometryController extends ClinicalStageController
             'diagnoses' => ClinicalOrders::diagnoses('optometry', $id),
             'prescription' => ClinicalOrders::prescription('optometry', $id),
             'follow_up' => ClinicalOrders::followUp('optometry', $id),
+            'investigations' => ClinicalOrders::investigations($id, 'optometry'),
+            'biometry' => self::biometry($id),
         ];
         foreach (array_keys(self::TEXT_LIMITS) as $field) {
             $record[$field] = Crypto::decrypt($r["{$field}_enc"], "optometry_assessments.$field");
@@ -284,6 +296,75 @@ final class OptometryController extends ClinicalStageController
               WHERE visit_id = :v AND status = 'completed'",
             ['by' => $userId, 'by2' => $userId, 'v' => $visitId]
         ) > 0;
+    }
+
+    // ─── Biometry (cataract) ─────────────────────────────────────────────
+
+    /** Field => [min, max, step]; null bounds mark the text fields. */
+    public const BIOMETRY_FIELDS = [
+        'axial_length' => [15, 40, 0.01], 'steep_k' => [30, 65, 0.01], 'flat_k' => [30, 65, 0.01], 'acd' => [1, 6, 0.01],
+        'corneal_thickness' => [300, 800, 1], 'lens_thickness' => [2, 7, 0.01], 'white_to_white' => [9, 15, 0.01],
+        'a_constant' => [110, 125, 0.01], 'iol_model' => null, 'iol_power' => [-10, 40, 0.01], 'remarks' => null,
+    ];
+
+    /** Both eyes, every field (null when not measured). */
+    private static function biometryInput(ClinicalInput $in): array
+    {
+        $out = [];
+        foreach (['right', 'left'] as $eye) {
+            foreach (self::BIOMETRY_FIELDS as $field => $range) {
+                $path = "biometry.$eye.$field";
+                $out[$eye][$field] = match (true) {
+                    $field === 'iol_model' => $in->text($path, 60),
+                    $field === 'remarks' => $in->text($path, 200),
+                    $field === 'corneal_thickness' => $in->int($path, $range[0], $range[1]),
+                    default => $in->decimal($path, $range[0], $range[1], $range[2]),
+                };
+            }
+        }
+        return $out;
+    }
+
+    /** Biometry of an assessment, both eyes, every field. */
+    public static function biometry(int $assessmentId): array
+    {
+        $out = ['right' => array_fill_keys(array_keys(self::BIOMETRY_FIELDS), null), 'left' => array_fill_keys(array_keys(self::BIOMETRY_FIELDS), null)];
+        foreach (Database::all('SELECT * FROM optometry_biometry WHERE assessment_id = :a', ['a' => $assessmentId]) as $row) {
+            $out[$row['eye']] = self::biometryRow($row);
+        }
+        return $out;
+    }
+
+    public static function biometryRow(array $row): array
+    {
+        $out = [];
+        foreach (array_keys(self::BIOMETRY_FIELDS) as $field) {
+            $out[$field] = match ($field) {
+                'iol_model' => $row['iol_model'],
+                'remarks' => Crypto::decrypt($row['remarks_enc'], 'optometry_biometry.remarks'),
+                'corneal_thickness' => ClinicalService::toInt($row['corneal_thickness']),
+                default => ClinicalService::toFloat($row[$field]),
+            };
+        }
+        return $out;
+    }
+
+    private static function saveBiometry(int $assessmentId, array $biometry): void
+    {
+        Database::execute('DELETE FROM optometry_biometry WHERE assessment_id = :a', ['a' => $assessmentId]);
+        foreach ($biometry as $eye => $values) {
+            if (!array_filter($values, static fn ($v) => $v !== null)) {
+                continue;
+            }
+            $columns = $values;
+            unset($columns['remarks']);
+            $columns['remarks_enc'] = Crypto::encrypt($values['remarks'], 'optometry_biometry.remarks');
+            $names = array_keys($columns);
+            Database::execute(
+                'INSERT INTO optometry_biometry (assessment_id, eye, ' . implode(', ', $names) . ') VALUES (:_a, :_e, :' . implode(', :', $names) . ')',
+                $columns + ['_a' => $assessmentId, '_e' => $eye]
+            );
+        }
     }
 
     private static function saveRefraction(int $assessmentId, string $kind, int $setNo, array $row): void

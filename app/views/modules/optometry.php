@@ -83,6 +83,28 @@
               <span class="muted-note">For a second pair with a different prescription, e.g. reading glasses beside bifocals.</span>
             </div>
 
+            <!-- Cataract biometry: Theatre fills a new cataract booking from the latest one for that eye. -->
+            <div class="vitals-card">
+              <div class="vitals-card-title">Biometry <span style="font-weight:400;text-transform:none">(optional — for cataract patients)</span></div>
+              <div class="table-wrap">
+                <table class="refr-table">
+                  <thead><tr><th>Measurement</th><th>Right Eye (OD)</th><th>Left Eye (OS)</th></tr></thead>
+                  <tbody>
+<?php foreach ([['axial_length', 'Axial length (mm)', '23.50'], ['steep_k', 'K1 / steep K (D)', '44.25'], ['flat_k', 'K2 / flat K (D)', '43.50'],
+                ['acd', 'ACD (mm)', '3.10'], ['corneal_thickness', 'Corneal thickness (µm)', '540'], ['lens_thickness', 'Lens thickness (mm)', '4.50'],
+                ['white_to_white', 'White-to-white (mm)', '11.80'], ['a_constant', 'A-constant', '118.40'], ['iol_model', 'IOL model', 'e.g. SN60WF'],
+                ['iol_power', 'IOL power (D)', '21.50'], ['remarks', 'Remarks', '']] as [$key, $label, $placeholder]): ?>
+                    <tr><td><?= $label ?></td>
+<?php foreach (['right', 'left'] as $eye): ?>
+                      <td><input class="refr-input"<?= in_array($key, ['iol_model', 'remarks'], true) ? ' maxlength="' . ($key === 'remarks' ? 200 : 60) . '"' : ' inputmode="decimal"' ?> data-field="biometry.<?= $eye ?>.<?= $key ?>" placeholder="<?= $placeholder ?>"></td>
+<?php endforeach; ?>
+                    </tr>
+<?php endforeach; ?>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div class="clinical-card">
               <div class="vitals-card-title">Clinical Assessment</div>
               <div class="clinical-grid">
@@ -107,6 +129,14 @@
             <div class="med-orders-card" data-lock="correct">
               <div class="med-orders-header"><div class="med-orders-title">Prescription</div></div>
               <div class="med-orders-body" data-collect="skip" id="op-rx"></div>
+            </div>
+
+            <div class="clinical-card" data-lock="correct" id="op-inv-card">
+              <div class="vitals-card-title" style="display:flex;align-items:center;gap:8px">Investigations
+                <button type="button" class="btn btn-secondary btn-sm" style="margin-left:auto" id="op-inv-add" onclick="OPTO_FORM.addInvestigation()">Add investigation</button>
+              </div>
+              <div data-collect="skip" data-field="investigations" id="op-inv"></div>
+              <div class="cl-note">Booked at Diagnostics when you complete; the patient pays when they check in there.</div>
             </div>
 
 <?php $clPrefix = 'op'; require __DIR__ . '/partials/clinical-followup.php'; ?>

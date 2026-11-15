@@ -27,4 +27,6 @@ run "uat round 4 api"     node uat-round4.mjs
 run "uat round 4 browser" node uat-round4-browser.mjs
 run "results api"         node results-history.mjs
 run "results browser"     node results-history-browser.mjs
+run "optometry orders"     node optometry-orders.mjs
+run "optometry browser"    node optometry-orders-browser.mjs
 run "all screens"         node smoke-modules.mjs

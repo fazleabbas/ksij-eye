@@ -199,6 +199,7 @@ return static function (Router $r): void {
 
     // Theatre — bookings, pre-op, the operation, post-op and history
     $r->add('GET',  '/theatre/options',                   [TheatreController::class, 'options'],             'theatre.booking.view');
+    $r->add('GET',  '/theatre/patients/{id}/biometry',    [TheatreController::class, 'latestBiometry'],      'theatre.booking.manage');
     $r->add('GET',  '/theatre/recommendations',           [TheatreController::class, 'recommendations'],     'theatre.booking.view');
     $r->add('GET',  '/theatre/bookings',                  [TheatreController::class, 'index'],               'theatre.booking.view', touch: false);
     $r->add('POST', '/theatre/bookings',                  [TheatreController::class, 'store'],               'theatre.booking.manage');

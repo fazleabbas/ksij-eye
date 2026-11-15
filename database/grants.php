@@ -38,6 +38,7 @@ return [
     'triage_assessments'          => ['SELECT', 'INSERT', 'UPDATE'],
     'optometry_assessments'       => ['SELECT', 'INSERT', 'UPDATE'],
     'optometry_refractions'       => ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    'optometry_biometry'          => ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     'ophthalmology_consultations' => ['SELECT', 'INSERT', 'UPDATE'],
     // Child rows of an editable record are replaced as a whole on save
     'optometry_lens_items'        => ['SELECT', 'INSERT', 'DELETE'],

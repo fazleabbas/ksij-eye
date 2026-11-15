@@ -18,6 +18,36 @@ final class TheatreController
 {
     private const EYES = ['right', 'left', 'both'];
 
+    /**
+     * The patient's latest biometry from Optometry for each eye, however old (the date is shown),
+     * so a new cataract booking starts from it. The booking keeps its own copy.
+     */
+    public function latestBiometry(Request $request, array $params): array
+    {
+        $patientId = (int) $params['id'];
+        if (!Database::value('SELECT 1 FROM patients WHERE id = :id', ['id' => $patientId])) {
+            throw HttpException::notFound('Patient not found.');
+        }
+        $out = [];
+        foreach (['right', 'left'] as $eye) {
+            $row = Database::one(
+                "SELECT ob.*, a.completed_at, v.visit_no, TRIM(CONCAT_WS(' ', u.first_name, u.last_name)) AS recorded_by
+                   FROM optometry_biometry ob
+                   JOIN optometry_assessments a ON a.id = ob.assessment_id
+                   JOIN visits v ON v.id = a.visit_id
+                   LEFT JOIN users u ON u.id = a.completed_by
+                  WHERE a.patient_id = :p AND a.status = 'completed' AND ob.eye = :e
+                  ORDER BY a.completed_at DESC, a.id DESC LIMIT 1",
+                ['p' => $patientId, 'e' => $eye]
+            );
+            $out[$eye] = $row === null ? null : OptometryController::biometryRow($row) + [
+                'recorded_at' => Format::utc($row['completed_at']), 'recorded_by' => $row['recorded_by'], 'visit_no' => $row['visit_no'],
+            ];
+        }
+        Audit::access($patientId, 'theatre', 'view', 'optometry_biometry', $patientId);
+        return ['biometry' => $out];
+    }
+
     public function options(): array
     {
         $staff = static function (array $designations): array {

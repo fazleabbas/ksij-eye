@@ -48,6 +48,7 @@ return static function (PDO $pdo): void {
         ['ophthalmology.record', 'Clinical', 'Record ophthalmology consultations'],
         ['ophthalmology.investigations.request', 'Clinical', 'Request investigations from a consultation'],
         ['ophthalmology.surgery.recommend', 'Clinical', 'Recommend surgery from a consultation'],
+        ['optometry.investigations.request', 'Clinical', 'Request investigations from an optometry assessment'],
         ['ophthalmology.results.view', 'Clinical', 'See test results and theatre notes in patient history; told when results are ready'],
 
         ['theatre.booking.view', 'Theatre', 'View theatre bookings'],
@@ -165,6 +166,10 @@ return static function (PDO $pdo): void {
             'diagnostics.booking.view', 'diagnostics.booking.manage', 'diagnostics.booking.checkin', 'diagnostics.booking.cancel',
             'diagnostics.report.view', 'diagnostics.report.record', 'diagnostics.history.view', 'diagnostics.nocharge.request',
             'reports.view', ...$selfService]],
+        // Optometry with test results (the Clinical role, shared with triage nurses, sees status only).
+        'optometrist' => ['Optometrist', 'Optometry — refraction, biometry, investigations and their results.', 'teal', true, false, [
+            'dashboard.view', 'patients.view', 'patients.files.view', 'visits.view', 'triage.view', 'optometry.*', 'ophthalmology.view',
+            'ophthalmology.results.view', 'diagnostics.booking.view', 'diagnostics.history.view', 'reports.view', ...$selfService]],
         'doctor' => ['Doctor', 'Ophthalmologists — consultations, surgery and diagnostic reporting.', 'green', true, false, [
             'dashboard.view', 'patients.view', 'patients.files.view', 'visits.view', 'visits.emergency', 'triage.view', 'optometry.view',
             'ophthalmology.*', 'theatre.*', 'diagnostics.*', 'pharmacy.orders.view', 'reports.view', 'reports.clinical', 'mtuha.view', ...$selfService]],

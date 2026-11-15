@@ -58,6 +58,7 @@ final class ClinicalController
             'edit_window_hours' => ClinicalService::editHours(),
             'can' => [
                 'request_investigations' => $ctx->can('ophthalmology.investigations.request'),
+                'request_optometry_investigations' => $ctx->can('optometry.investigations.request'),
                 'recommend_surgery' => $ctx->can('ophthalmology.surgery.recommend'),
                 'view_files' => $ctx->can('patients.files.view'),
             ],

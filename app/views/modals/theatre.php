@@ -86,6 +86,7 @@
       <div id="th-biometry-block" style="display:none">
         <div class="form-label" style="margin-top:10px">Lens and biometry</div>
         <div class="muted-note">A cataract case cannot be cleared for theatre without at least the axial length or the steep K.</div>
+        <div class="alert alert-info" id="th-bio-source" style="display:none;margin:8px 0"></div>
         <div class="form-grid">
           <div class="form-group"><label class="form-label" for="th-bio-model">IOL model</label><input class="form-input" id="th-bio-model" maxlength="60" placeholder="e.g. SN60WF"></div>
           <div class="form-group"><label class="form-label" for="th-bio-power">IOL power</label><input type="number" step="0.25" class="form-input" id="th-bio-power"></div>
@@ -101,6 +102,10 @@
         <div class="form-grid">
           <div class="form-group"><label class="form-label" for="th-bio-acd">ACD (mm)</label><input type="number" step="0.01" class="form-input" id="th-bio-acd"></div>
           <div class="form-group"><label class="form-label" for="th-bio-cct">Corneal thickness (µm)</label><input type="number" class="form-input" id="th-bio-cct"></div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group"><label class="form-label" for="th-bio-lt">Lens thickness (mm)</label><input type="number" step="0.01" class="form-input" id="th-bio-lt"></div>
+          <div class="form-group"><label class="form-label" for="th-bio-wtw">White-to-white (mm)</label><input type="number" step="0.01" class="form-input" id="th-bio-wtw"></div>
         </div>
         <div class="form-group"><label class="form-label" for="th-bio-remarks">Remarks</label><input class="form-input" id="th-bio-remarks" maxlength="200"></div>
       </div>

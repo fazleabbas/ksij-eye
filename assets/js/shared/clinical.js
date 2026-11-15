@@ -459,6 +459,17 @@ function clRxText(rx) {
     `<div><strong>${KSI.esc(i.name)}</strong>${i.outside ? ' <em>(buy outside)</em>' : ''} — ${KSI.esc([i.dose, i.frequency, i.duration].filter(Boolean).join(' · '))}${i.instructions ? ` (${KSI.esc(i.instructions)})` : ''} × ${i.quantity}</div>`).join('')}</div></div>`;
 }
 
+/** Cataract biometry per eye, as one line each. */
+function clBiometryText(biometry) {
+  const line = b => [b.axial_length != null && `AL ${b.axial_length} mm`, b.steep_k != null && `K1 ${b.steep_k}`, b.flat_k != null && `K2 ${b.flat_k}`,
+    b.acd != null && `ACD ${b.acd}`, b.corneal_thickness != null && `CCT ${b.corneal_thickness}`, b.lens_thickness != null && `LT ${b.lens_thickness}`,
+    b.white_to_white != null && `WTW ${b.white_to_white}`, b.a_constant != null && `A ${b.a_constant}`, b.iol_model && `IOL ${b.iol_model}`,
+    b.iol_power != null && `${b.iol_power} D`, b.remarks].filter(Boolean).join(' · ');
+  const eyes = [['right', 'Right'], ['left', 'Left']].map(([eye, label]) => [label, biometry?.[eye] ? line(biometry[eye]) : '']).filter(([, text]) => text);
+  if (!eyes.length) return '';
+  return `<div class="hist-field"><div class="hist-field-lbl">Biometry</div><div class="hist-field-val">${eyes.map(([label, text]) => `${label}: ${KSI.esc(text)}`).join('<br>')}</div></div>`;
+}
+
 function clOptometryReadout(o, title = 'Optometry') {
   if (!o) return '';
   const field = (label, value) => (value ? `<div class="hist-field"><div class="hist-field-lbl">${label}</div><div class="hist-field-val">${KSI.esc(value)}</div></div>` : '');
@@ -471,6 +482,7 @@ function clOptometryReadout(o, title = 'Optometry') {
     </div>
     ${clRefractionTable(o.refractions, o.extra_rx, o.final_label)}
     ${clDxText(o.diagnoses)}
+    ${clBiometryText(o.biometry)}
     ${field('Management plan', o.management_plan)}${field('Anterior segment', o.anterior_segment)}${field('Posterior segment', o.posterior_segment)}${field('Remarks', o.remarks)}
     ${clRxText(o.prescription)}
   </div>`;
