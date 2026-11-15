@@ -128,6 +128,8 @@ final class TheatreService
         $booking['preop'] = self::preop($id, $ctx);
         $booking['operation'] = self::operation($id, $ctx);
         $booking['postop_visits'] = self::postopVisits($id, $ctx);
+        $booking['template'] = self::operationTemplate($row['surgery_item_id'] === null ? null : (int) $row['surgery_item_id'],
+            array_column($booking['procedures'], 'price_item_id'));
         \App\Core\Audit::access((int) $row['patient_id'], 'theatre', 'view', 'theatre_booking', $row['booking_no']);
         return $booking;
     }
@@ -174,6 +176,62 @@ final class TheatreService
             'created_by' => $r['created_by_name'],
             'row_version' => (int) $r['row_version'],
             'patient' => PatientService::brief($r) + ['id' => (int) $r['patient_id'], 'phone' => Crypto::decrypt($r['phone_enc'], 'patients.phone')],
+        ];
+    }
+
+    /**
+     * The starting text for the operation record and the first post-op review: the templates of
+     * the booking's surgery, then of its procedures, joined. Medicines are merged (first one wins
+     * for a medicine on two templates); the earliest review day is kept. Null when none applies.
+     */
+    public static function operationTemplate(?int $surgeryItemId, array $procedureItemIds): ?array
+    {
+        $itemIds = array_values(array_unique(array_filter([$surgeryItemId, ...array_map('intval', $procedureItemIds)])));
+        if ($itemIds === []) {
+            return null;
+        }
+        [$in, $params] = Database::in('i', $itemIds);
+        $rows = Database::all(
+            "SELECT t.id, t.price_item_id, t.operation_notes, t.postop_instructions, t.review_days, pi.name
+               FROM operation_templates t JOIN price_items pi ON pi.id = t.price_item_id
+              WHERE t.is_active = 1 AND t.price_item_id IN ($in)",
+            $params
+        );
+        if ($rows === []) {
+            return null;
+        }
+        $order = array_flip($itemIds);
+        usort($rows, static fn (array $a, array $b) => $order[(int) $a['price_item_id']] <=> $order[(int) $b['price_item_id']]);
+        $several = count($rows) > 1;
+        $notes = $instructions = $medicines = [];
+        $reviewDays = null;
+        foreach ($rows as $row) {
+            if (trim((string) $row['operation_notes']) !== '') {
+                $notes[] = ($several ? "{$row['name']}:\n" : '') . trim($row['operation_notes']);
+            }
+            if (trim((string) $row['postop_instructions']) !== '') {
+                $instructions[] = trim($row['postop_instructions']);
+            }
+            if ($row['review_days'] !== null) {
+                $reviewDays = $reviewDays === null ? (int) $row['review_days'] : min($reviewDays, (int) $row['review_days']);
+            }
+            foreach (Database::all(
+                'SELECT m.drug_id, d.name, m.quantity, m.dose, m.frequency, m.duration FROM operation_template_medicines m
+                   JOIN drugs d ON d.id = m.drug_id WHERE m.template_id = :t AND d.is_active = 1 ORDER BY m.sort_order, d.name',
+                ['t' => (int) $row['id']]
+            ) as $m) {
+                $medicines[(int) $m['drug_id']] ??= [
+                    'drug_id' => (int) $m['drug_id'], 'name' => $m['name'], 'quantity' => (int) $m['quantity'],
+                    'dose' => $m['dose'], 'frequency' => $m['frequency'], 'duration' => $m['duration'],
+                ];
+            }
+        }
+        return [
+            'names' => array_column($rows, 'name'),
+            'operation_notes' => $notes ? implode("\n\n", $notes) : null,
+            'postop_instructions' => $instructions ? implode("\n", $instructions) : null,
+            'review_days' => $reviewDays,
+            'medicines' => array_values($medicines),
         ];
     }
 

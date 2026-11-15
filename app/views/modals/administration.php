@@ -297,3 +297,47 @@
     </div>
   </div>
 </div>
+
+<!-- ══ OPERATION TEMPLATE (Settings → Clinical Lists → Operation Templates) ══ -->
+<div class="modal-overlay" id="modal-op-template">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="opt-tpl-title">Operation template</div>
+        <div class="modal-subtitle">Pre-fills the operation notes and the first post-op review. The surgeon can change everything.</div>
+      </div>
+      <button class="modal-close" type="button" onclick="closeModal('modal-op-template')" aria-label="Close">&times;</button>
+    </div>
+    <form class="modal-body" id="op-tpl-form" novalidate onsubmit="event.preventDefault()">
+      <div class="form-group" data-field="operation_notes">
+        <label class="form-label" for="op-tpl-notes">Operation notes (Intra-op)</label>
+        <textarea class="form-input" rows="8" id="op-tpl-notes" maxlength="10000"></textarea>
+      </div>
+      <div class="form-label" style="margin-top:6px">Post-op medicines (first post-op review)</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Medicine</th><th>How many</th><th>Dose</th><th>How often</th><th>For how long</th><th></th></tr></thead>
+          <tbody id="op-tpl-meds"></tbody>
+        </table>
+      </div>
+      <select class="form-select" id="op-tpl-drug" style="margin-top:8px" onchange="opTplAddMed(this.value)"></select>
+      <div class="form-group" data-field="postop_instructions" style="margin-top:12px">
+        <label class="form-label" for="op-tpl-instructions">Post-op instructions (go into Recovery notes)</label>
+        <textarea class="form-input" rows="3" id="op-tpl-instructions" maxlength="2000" placeholder="e.g. Keep pressure bandage intact for 48 hours."></textarea>
+      </div>
+      <div class="form-grid">
+        <div class="form-group" data-field="review_days">
+          <label class="form-label" for="op-tpl-review">First review after (days)</label>
+          <input type="number" class="form-input" id="op-tpl-review" min="0" max="90" placeholder="e.g. 1 for TCA D1">
+        </div>
+        <div class="form-group" style="align-self:end">
+          <label class="ur-perm-check"><input type="checkbox" id="op-tpl-active" checked> <span>Use this template</span></label>
+        </div>
+      </div>
+    </form>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" type="button" onclick="closeModal('modal-op-template')">Cancel</button>
+      <button class="btn btn-primary" type="button" id="op-tpl-save" onclick="opTplSave()">Save template</button>
+    </div>
+  </div>
+</div>

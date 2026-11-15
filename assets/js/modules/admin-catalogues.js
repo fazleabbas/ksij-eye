@@ -11,6 +11,7 @@ const CAT_KINDS = {
   drugs: { path: 'catalogues/drugs', columns: ['Medicine', 'Category', 'Form', 'Default dose', 'Frequency', 'Duration', 'Price', 'Status', ''] },
   findings: { path: 'catalogues/findings', columns: ['Section', 'Finding', 'Normal', 'Status', ''] },
   lists: { path: 'catalogues/lists', columns: ['List', 'Entry', 'Order', 'Status', ''] },
+  templates: { path: 'catalogues/operation-templates', columns: ['Surgery / procedure', 'Type', 'Operation notes', 'Post-op medicines', 'First review', 'Status', ''] },
 };
 
 function catSwitch(kind) {
@@ -40,6 +41,9 @@ async function catLoad(force = false) {
     admFillSelect('cat-filter', 'All lists', CAT_UI.data.lists.lists.map(l => [l.code, l.name]));
   }
   filter.style.display = kind === 'findings' || kind === 'lists' ? '' : 'none';
+  // Every surgery and procedure is listed; there is nothing to "add" on this tab.
+  const add = document.getElementById('su-add-btn');
+  if (add && SETTINGS_UI.tab === 'clinical') add.style.display = kind === 'templates' || !KSI.can('catalogues.manage') ? 'none' : '';
   catRenderTable();
 }
 
@@ -50,7 +54,8 @@ function catRows() {
   const filter = document.getElementById('cat-filter').value;
   const q = document.getElementById('cat-search').value.trim().toLowerCase();
   let rows;
-  if (kind === 'icd10') rows = data.codes;
+  if (kind === 'templates') rows = data.items.map(i => ({ ...i, label: i.name }));
+  else if (kind === 'icd10') rows = data.codes;
   else if (kind === 'drugs') rows = data.drugs;
   else if (kind === 'findings') {
     const labels = Object.fromEntries(data.sections.map(s => [s.code, s.label]));
@@ -75,6 +80,21 @@ function catRenderTable() {
     findings: r => `<td style="font-size:12px">${KSI.esc(r.section_label)}</td><td class="patient-name">${KSI.esc(r.label)}</td><td>${r.is_normal ? 'Yes' : '—'}</td>`,
     lists: r => `<td style="font-size:12px">${KSI.esc(r.list_name)}</td><td class="patient-name">${KSI.esc(r.label)}</td><td>${r.sort_order}</td>`,
   }[kind];
+  if (kind === 'templates') {
+    if (!rows.length) admTableMessage('cat-tbody', columns, 'No surgeries or procedures on the price list.');
+    else document.getElementById('cat-tbody').innerHTML = rows.map(r => {
+      const t = r.template;
+      return `<tr><td class="patient-name">${KSI.esc(r.name)}${r.item_active ? '' : ' <span class="muted-note">(off the price list)</span>'}</td>
+        <td style="font-size:12px">${r.category === 'surgery' ? 'Surgery' : 'Procedure'}</td>
+        <td style="font-size:12px">${t?.operation_notes ? KSI.esc(t.operation_notes.slice(0, 70)) + (t.operation_notes.length > 70 ? '…' : '') : '<span class="muted-note">None</span>'}</td>
+        <td style="font-size:12px">${t?.medicines?.length ? t.medicines.map(m => KSI.esc(m.name)).join(', ') : '<span class="muted-note">None</span>'}</td>
+        <td>${t?.review_days != null ? `Day ${t.review_days}` : '—'}</td>
+        <td>${t ? settingsStatusBadge(t.is_active) : '<span class="muted-note">No template</span>'}</td>
+        <td>${KSI.can('catalogues.manage') ? `<button class="btn btn-secondary btn-sm" onclick="opTplOpen(${r.id})">${t ? 'Edit' : 'Create'}</button>` : ''}</td></tr>`;
+    }).join('');
+    document.getElementById('cat-count').textContent = `${rows.length} surger${rows.length === 1 ? 'y or procedure' : 'ies and procedures'}`;
+    return;
+  }
   if (!rows.length) admTableMessage('cat-tbody', columns, 'No entries match.');
   else document.getElementById('cat-tbody').innerHTML = rows.map(r => `<tr>${cells(r)}<td>${status(r.is_active)}</td><td>${edit(r.id)}</td></tr>`).join('');
   document.getElementById('cat-count').textContent = `${rows.length} entr${rows.length === 1 ? 'y' : 'ies'}`;
@@ -133,6 +153,70 @@ function catOpenItem(id = null) {
   KSI.clearFieldErrors(form);
   openModal('modal-catalogue-item');
   setTimeout(() => form.querySelector('input:not([disabled]), select')?.focus(), 50);
+}
+
+// ── Operation templates ──
+const OP_TPL = { itemId: null, meds: [] };
+
+function opTplOpen(itemId) {
+  const item = CAT_UI.data.templates.items.find(i => i.id === itemId);
+  if (!item) return;
+  const t = item.template;
+  OP_TPL.itemId = itemId;
+  OP_TPL.meds = (t?.medicines || []).map(m => ({ ...m }));
+  document.getElementById('opt-tpl-title').textContent = `Operation template — ${item.name}`;
+  document.getElementById('op-tpl-notes').value = t?.operation_notes || '';
+  document.getElementById('op-tpl-instructions').value = t?.postop_instructions || '';
+  document.getElementById('op-tpl-review').value = t?.review_days ?? '';
+  document.getElementById('op-tpl-active').checked = t ? t.is_active : true;
+  KSI.clearFieldErrors(document.getElementById('op-tpl-form'));
+  opTplRenderMeds();
+  openModal('modal-op-template');
+}
+
+function opTplRenderMeds() {
+  const drugs = CAT_UI.data.templates.drugs;
+  const chosen = OP_TPL.meds.map(m => m.drug_id);
+  admFillSelect('op-tpl-drug', 'Add a medicine from the catalogue', drugs.filter(d => !chosen.includes(d.id)).map(d => [d.id, d.name]));
+  document.getElementById('op-tpl-meds').innerHTML = OP_TPL.meds.length
+    ? OP_TPL.meds.map((m, i) => `<tr data-field="medicines.${i}.drug_id">
+        <td>${KSI.esc(m.name)}</td>
+        <td><input type="number" class="form-input" min="1" max="999" value="${m.quantity}" style="width:70px" onchange="OP_TPL.meds[${i}].quantity = Number(this.value) || 1"></td>
+        <td><input class="form-input" maxlength="40" value="${KSI.esc(m.dose || '')}" style="width:90px" onchange="OP_TPL.meds[${i}].dose = this.value"></td>
+        <td><input class="form-input" maxlength="20" value="${KSI.esc(m.frequency || '')}" style="width:90px" onchange="OP_TPL.meds[${i}].frequency = this.value"></td>
+        <td><input class="form-input" maxlength="40" value="${KSI.esc(m.duration || '')}" style="width:100px" onchange="OP_TPL.meds[${i}].duration = this.value"></td>
+        <td><button type="button" class="action-btn action-cancel" onclick="OP_TPL.meds.splice(${i}, 1); opTplRenderMeds()">Remove</button></td></tr>`).join('')
+    : '<tr class="table-state"><td colspan="6">No medicine on this template.</td></tr>';
+}
+
+function opTplAddMed(drugId) {
+  const drug = CAT_UI.data.templates.drugs.find(d => d.id === Number(drugId));
+  if (!drug) return;
+  OP_TPL.meds.push({ drug_id: drug.id, name: drug.name, quantity: 1, dose: '', frequency: '', duration: '' });
+  opTplRenderMeds();
+}
+
+async function opTplSave() {
+  const form = document.getElementById('op-tpl-form');
+  KSI.clearFieldErrors(form);
+  const review = document.getElementById('op-tpl-review').value.trim();
+  const body = {
+    operation_notes: document.getElementById('op-tpl-notes').value.trim(),
+    postop_instructions: document.getElementById('op-tpl-instructions').value.trim(),
+    review_days: review === '' ? null : Number(review),
+    is_active: document.getElementById('op-tpl-active').checked,
+    medicines: OP_TPL.meds.map(m => ({ drug_id: m.drug_id, quantity: m.quantity, dose: m.dose || null, frequency: m.frequency || null, duration: m.duration || null })),
+  };
+  await admBusy(document.getElementById('op-tpl-save'), async () => {
+    try {
+      await KSI.put(`catalogues/operation-templates/${OP_TPL.itemId}`, body);
+      closeModal('modal-op-template');
+      showToast('Saved', 'Operation template saved.', 'success');
+      await catLoad(true);
+    } catch (error) {
+      KSI.reportError(error, form);
+    }
+  });
 }
 
 async function catSaveItem() {

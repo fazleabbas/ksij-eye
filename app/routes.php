@@ -280,6 +280,8 @@ return static function (Router $r): void {
     $r->add('GET',  '/catalogues/lists',         [CatalogueController::class, 'listIndex'],     'catalogues.manage');
     $r->add('POST', '/catalogues/lists',         [CatalogueController::class, 'listStore'],     'catalogues.manage');
     $r->add('PUT',  '/catalogues/lists/{id}',    [CatalogueController::class, 'listUpdate'],    'catalogues.manage');
+    $r->add('GET',  '/catalogues/operation-templates',      [CatalogueController::class, 'templateIndex'], 'catalogues.manage');
+    $r->add('PUT',  '/catalogues/operation-templates/{id}', [CatalogueController::class, 'templateSave'],  'catalogues.manage');
 
     // Price list
     $r->add('GET',  '/prices',              [PriceController::class, 'index'],   'prices.view');

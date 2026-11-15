@@ -25,6 +25,8 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `pharmacy-balance-browser.mjs` | The same on screen: review note, Balance to Collect, Supply balance |
 | `optical-waiting.mjs` | Order some spectacle pairs now, the rest later at the locked lens price; cancelled later order returns its pair; close waiting pairs |
 | `optical-waiting-browser.mjs` | The same on screen: Order now ticks, waiting pair in Incoming |
+| `operation-templates.mjs` | Operation templates: the clinic's five loaded, edited in Settings, joined on a booking, seeding never overwrites edits |
+| `operation-templates-browser.mjs` | Intra-op notes and the first post-op review start from the template; the Settings editor |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

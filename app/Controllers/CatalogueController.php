@@ -134,6 +134,104 @@ final class CatalogueController
         return ['id' => (int) $before['id']];
     }
 
+    // ─── Operation templates ─────────────────────────────────────────────
+
+    /** Every surgery and procedure on the price list, with its template if it has one. */
+    public function templateIndex(): array
+    {
+        $templates = [];
+        foreach (Database::all('SELECT * FROM operation_templates') as $t) {
+            $templates[(int) $t['price_item_id']] = $t;
+        }
+        $medicines = [];
+        foreach (Database::all(
+            'SELECT m.template_id, m.drug_id, d.name, d.is_active, m.quantity, m.dose, m.frequency, m.duration
+               FROM operation_template_medicines m JOIN drugs d ON d.id = m.drug_id ORDER BY m.template_id, m.sort_order, d.name'
+        ) as $m) {
+            $medicines[(int) $m['template_id']][] = [
+                'drug_id' => (int) $m['drug_id'], 'name' => $m['name'], 'drug_active' => (bool) $m['is_active'], 'quantity' => (int) $m['quantity'],
+                'dose' => $m['dose'], 'frequency' => $m['frequency'], 'duration' => $m['duration'],
+            ];
+        }
+        $items = array_map(static function (array $r) use ($templates, $medicines): array {
+            $t = $templates[(int) $r['id']] ?? null;
+            return [
+                'id' => (int) $r['id'], 'name' => $r['name'], 'category' => $r['category'], 'item_active' => (bool) $r['is_active'],
+                'template' => $t === null ? null : [
+                    'operation_notes' => $t['operation_notes'], 'postop_instructions' => $t['postop_instructions'],
+                    'review_days' => $t['review_days'] === null ? null : (int) $t['review_days'], 'is_active' => (bool) $t['is_active'],
+                    'medicines' => $medicines[(int) $t['id']] ?? [],
+                ],
+            ];
+        }, Database::all("SELECT id, name, category, is_active FROM price_items WHERE category IN ('surgery', 'procedure') ORDER BY category DESC, name"));
+        $drugs = array_map(static fn (array $d) => ['id' => (int) $d['id'], 'name' => $d['name']],
+            Database::all('SELECT id, name FROM drugs WHERE is_active = 1 ORDER BY name'));
+        return ['items' => $items, 'drugs' => $drugs];
+    }
+
+    /** Creates or replaces the template of one surgery or procedure. */
+    public function templateSave(Request $request, array $params): array
+    {
+        $ctx = Auth::require();
+        $item = Database::one("SELECT id, name FROM price_items WHERE id = :id AND category IN ('surgery', 'procedure')", ['id' => $params['id']])
+            ?? throw HttpException::notFound('Surgery or procedure not found.');
+        $body = $request->all();
+        $v = Validator::make($body)
+            ->string('operation_notes', false, 10000)
+            ->string('postop_instructions', false, 2000)
+            ->int('review_days', false, 0, 90)
+            ->bool('is_active', true)
+            ->validate();
+        $rows = is_array($body['medicines'] ?? null) ? array_values($body['medicines']) : [];
+        if (count($rows) > 20) {
+            throw HttpException::validation(['medicines' => 'At most 20 medicines on a template.']);
+        }
+        $medicines = [];
+        foreach ($rows as $i => $row) {
+            $m = Validator::make(is_array($row) ? $row : [])
+                ->int('drug_id', true, 1)->int('quantity', true, 1, 999)
+                ->string('dose', false, 40)->string('frequency', false, 20)->string('duration', false, 40)
+                ->validate();
+            if (!Database::value('SELECT 1 FROM drugs WHERE id = :id AND is_active = 1', ['id' => $m['drug_id']])) {
+                throw HttpException::validation(["medicines.$i.drug_id" => 'Choose a medicine from the catalogue.']);
+            }
+            $medicines[$m['drug_id']] = $m;
+        }
+        Database::transaction(function () use ($item, $v, $medicines, $ctx): void {
+            $values = [
+                'n' => ($v['operation_notes'] ?? '') === '' ? null : $v['operation_notes'],
+                'p' => ($v['postop_instructions'] ?? '') === '' ? null : $v['postop_instructions'],
+                'r' => $v['review_days'] ?? null, 'a' => $v['is_active'] ? 1 : 0, 'by' => $ctx->userId,
+            ];
+            $id = Database::value('SELECT id FROM operation_templates WHERE price_item_id = :i', ['i' => (int) $item['id']]);
+            if ($id === null) {
+                $id = Database::insert(
+                    'INSERT INTO operation_templates (price_item_id, operation_notes, postop_instructions, review_days, is_active, created_at, updated_at, updated_by)
+                     VALUES (:i, :n, :p, :r, :a, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), :by)',
+                    $values + ['i' => (int) $item['id']]
+                );
+            } else {
+                Database::execute(
+                    'UPDATE operation_templates SET operation_notes = :n, postop_instructions = :p, review_days = :r, is_active = :a,
+                            updated_at = UTC_TIMESTAMP(3), updated_by = :by WHERE id = :id',
+                    $values + ['id' => (int) $id]
+                );
+            }
+            Database::execute('DELETE FROM operation_template_medicines WHERE template_id = :t', ['t' => (int) $id]);
+            $order = 0;
+            foreach ($medicines as $m) {
+                Database::execute(
+                    'INSERT INTO operation_template_medicines (template_id, drug_id, quantity, dose, frequency, duration, sort_order)
+                     VALUES (:t, :d, :q, :dose, :f, :du, :o)',
+                    ['t' => (int) $id, 'd' => $m['drug_id'], 'q' => $m['quantity'], 'dose' => $m['dose'] ?? null,
+                     'f' => $m['frequency'] ?? null, 'du' => $m['duration'] ?? null, 'o' => $order++]
+                );
+            }
+        });
+        Audit::log('settings', 'operation_template.saved', "Saved the operation template for {$item['name']}", 'price_item', (int) $item['id']);
+        return ['id' => (int) $item['id']];
+    }
+
     private function validateDrug(Request $request, bool $update): array
     {
         $v = Validator::make($request->all())

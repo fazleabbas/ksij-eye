@@ -326,4 +326,5 @@ return static function (PDO $pdo): void {
     $pdo->exec("UPDATE price_items SET is_laser = 1 WHERE code = 'INV-LASER'");
 
     (require __DIR__ . '/clinical.php')($pdo);
+    (require __DIR__ . '/operation_templates.php')($pdo);
 };

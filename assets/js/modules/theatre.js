@@ -749,6 +749,8 @@ function thRenderOperationPanel() {
   const staffOptions = (list, selected) => `<option value="">Not recorded</option>` +
     list.map(s => `<option value="${s.id}" ${Number(selected) === s.id ? 'selected' : ''}>${KSI.esc(s.name)}</option>`).join('');
   const localDateTime = iso => (iso ? new Date(iso).toISOString().slice(0, 16) : '');
+  // A new operation record starts from the surgery's (and procedures') template; nothing typed is replaced.
+  const notesFromTemplate = !o.surgical_notes && o.status !== 'completed' && !locked && !!b.template?.operation_notes;
 
   panel.innerHTML = `
     <div class="cl-mode">
@@ -816,7 +818,8 @@ function thRenderOperationPanel() {
     </div>
 
     <div class="form-group" data-field="surgical_notes"><label class="form-label">Operation notes <span class="required">*</span></label>
-      <textarea class="form-input" rows="5" id="th-op-notes" ${locked ? 'disabled' : ''}>${KSI.esc(o.surgical_notes || '')}</textarea></div>
+      ${notesFromTemplate ? `<div class="muted-note" style="margin-bottom:4px">Started from the ${KSI.esc(b.template.names.join(' + '))} template — change it to match what was done.</div>` : ''}
+      <textarea class="form-input" rows="${notesFromTemplate ? 9 : 5}" id="th-op-notes" ${locked ? 'disabled' : ''}>${KSI.esc(notesFromTemplate ? b.template.operation_notes : (o.surgical_notes || ''))}</textarea></div>
     <div class="form-group" data-field="complications"><label class="form-label">Complications <span class="required">*</span></label>
       <textarea class="form-input" rows="2" id="th-op-complications" placeholder="Write 'None' if there were none" ${locked ? 'disabled' : ''}>${KSI.esc(o.complications || '')}</textarea></div>
     <div class="form-group"><label class="form-label">Remarks</label>
@@ -883,6 +886,25 @@ async function thSaveOperation(button, complete) {
       KSI.reportError(error, panel, 'Could not save the operation record');
     }
   });
+}
+
+// ─── Operation templates (first post-op review) ───────────────────────────
+
+/** The first review of a case starts with the template's post-op medicines. */
+function thTemplateMeds() {
+  const b = TH.current;
+  if (!b?.template || (b.postop_visits || []).length) return;
+  TH.meds = (b.template.medicines || []).map(m => ({ ...m }));
+}
+
+/** First review date: the operation day plus the template's days (only if still ahead). */
+function thTemplateReviewDate(b) {
+  const days = b.template?.review_days;
+  if (days == null) return '';
+  const base = b.operation?.ended_at || b.operation?.started_at;
+  const day = base ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Dar_es_Salaam' }).format(new Date(base)) : uiToday();
+  const due = new Date(new Date(day + 'T00:00:00Z').getTime() + days * 86400000).toISOString().slice(0, 10);
+  return due >= uiToday() ? due : '';
 }
 
 // ─── Medicine editor (shared by the operation and post-op) ────────────────
@@ -964,6 +986,7 @@ async function thSelectPostop(id) {
   TH.current = booking;
   TH.postopVisit = null;
   TH.meds = [];
+  thTemplateMeds();
   thRenderQueue('th-postop-queue', 'th-postop-count', TH.postop, thSelectPostop, b => `<span class="badge badge-normal">${b.postop_visit_count} review${b.postop_visit_count === 1 ? '' : 's'}</span>`);
   thRenderPostopPanel();
 }
@@ -976,6 +999,8 @@ function thRenderPostopPanel() {
   const editing = TH.postopVisit;
   const locked = editing && editing.status === 'completed' && !editing.correctable_until;
   const value = v => v ?? '';
+  // The first review starts from the template: medicines, instructions in the recovery notes, review date.
+  const firstReview = !editing && !visits.length && !!b.template;
 
   panel.innerHTML = `
     <div class="cl-mode">
@@ -998,6 +1023,7 @@ function thRenderPostopPanel() {
 
     ${KSI.can('theatre.postop.record') ? `
       <div class="form-label" style="margin-top:14px">${editing ? `Review ${editing.visit_number}` : 'New review'}</div>
+      ${firstReview ? `<div class="muted-note">Started from the ${KSI.esc(b.template.names.join(' + '))} template: medicines, instructions and the review date — change anything as needed.</div>` : ''}
       ${locked ? '<div class="cl-lock-note">This review can no longer be changed. Add an addendum instead.</div>' : ''}
       <div class="form-grid">
         <div class="form-group" data-field="visit_date"><label class="form-label">Date <span class="required">*</span></label>
@@ -1006,7 +1032,7 @@ function thRenderPostopPanel() {
           <input type="number" min="0" max="10" class="form-input" id="th-pop-pain" value="${value(editing?.pain_score)}" ${locked ? 'disabled' : ''}></div>
       </div>
       <div class="form-group"><label class="form-label">How the patient is</label>
-        <textarea class="form-input" rows="2" id="th-pop-recovery" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.recovery_notes))}</textarea></div>
+        <textarea class="form-input" rows="${firstReview && b.template.postop_instructions ? 3 : 2}" id="th-pop-recovery" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.recovery_notes) || (firstReview ? b.template.postop_instructions || '' : ''))}</textarea></div>
       <div class="form-grid">
         <div class="form-group"><label class="form-label">Vision right</label><input class="form-input" id="th-pop-va-r" maxlength="8" value="${KSI.esc(value(editing?.va_right))}" ${locked ? 'disabled' : ''}></div>
         <div class="form-group"><label class="form-label">Vision left</label><input class="form-input" id="th-pop-va-l" maxlength="8" value="${KSI.esc(value(editing?.va_left))}" ${locked ? 'disabled' : ''}></div>
@@ -1034,7 +1060,7 @@ function thRenderPostopPanel() {
         <textarea class="form-input" rows="2" id="th-pop-counsel-notes" ${locked ? 'disabled' : ''}>${KSI.esc(value(editing?.counselling_notes))}</textarea></div>
       <div class="form-grid">
         <div class="form-group"><label class="form-label">Next review</label>
-          <input type="date" class="form-input" id="th-pop-followup" value="${value(editing?.follow_up_date)}" ${locked ? 'disabled' : ''}>
+          <input type="date" class="form-input" id="th-pop-followup" value="${value(editing?.follow_up_date) || (firstReview ? thTemplateReviewDate(b) : '')}" ${locked ? 'disabled' : ''}>
           <div class="muted-note">Reception sees this as a follow-up due.</div></div>
         <div class="form-group"><label class="form-label">Note about the review</label>
           <input class="form-input" id="th-pop-followup-notes" maxlength="200" value="${KSI.esc(value(editing?.follow_up_notes))}" ${locked ? 'disabled' : ''}></div>
@@ -1065,6 +1091,7 @@ function thEditPostopVisit(visitId) {
 function thNewPostopVisit() {
   TH.postopVisit = null;
   TH.meds = [];
+  thTemplateMeds();
   thRenderPostopPanel();
 }
 

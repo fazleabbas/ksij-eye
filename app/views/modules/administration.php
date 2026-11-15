@@ -167,6 +167,7 @@
               <button class="tab-btn" data-cat="drugs" onclick="catSwitch('drugs')">Medicines</button>
               <button class="tab-btn" data-cat="findings" onclick="catSwitch('findings')">Examination Findings</button>
               <button class="tab-btn" data-cat="lists" onclick="catSwitch('lists')">Dropdown Lists</button>
+              <button class="tab-btn" data-cat="templates" onclick="catSwitch('templates')">Operation Templates</button>
             </div>
             <div class="filters-bar">
               <div class="search-wrap">
