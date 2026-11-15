@@ -2,11 +2,12 @@
 /**
  * Clinical catalogues taken from the prototype: ICD-10 eye codes, examination findings and the drug list.
  * Each catalogue is seeded only while it is empty, so administrators' edits are never overwritten
- * (a renamed entry would otherwise come back under its old name).
+ * (a renamed entry would otherwise come back under its old name). The example drug list goes only
+ * into a brand-new install: a clinic that cleared it for its own medicines keeps it cleared.
  */
 declare(strict_types=1);
 
-return static function (PDO $pdo): void {
+return static function (PDO $pdo, bool $fresh = true): void {
     $isEmpty = static fn (string $table): bool => (int) $pdo->query("SELECT COUNT(*) FROM $table")->fetchColumn() === 0;
 
     // ── ICD-10 codes (code, description, category) ────────────────────────
@@ -82,7 +83,7 @@ return static function (PDO $pdo): void {
     }
 
     // ── Drug catalogue (name, category, default dose, frequency, duration) ─
-    if ($isEmpty('drugs')) {
+    if ($fresh && $isEmpty('drugs')) {
         $drugs = [
             ['Timolol 0.5% Eye Drops', 'Glaucoma', '1 Drop', 'BD', '1 Month'],
             ['Latanoprost 0.005% Eye Drops', 'Glaucoma', '1 Drop', 'OD', '1 Month'],

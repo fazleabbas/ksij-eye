@@ -13,6 +13,9 @@
  *   php bin/install.php create-admin     Create an administrator (prompts; or KSI_ADMIN_* env vars).
  *   php bin/install.php crypto-selftest  Verify encryption and blind indexes with the configured keys.
  *   php bin/install.php reset            DEVELOPMENT ONLY: drop all tables, then migrate, grant and seed.
+ *   php bin/install.php clear-catalogue  Before go-live: remove the example medicines (and their pharmacy stock
+ *                                        rows) and the example prices, keeping the consultation and frame prices
+ *                                        the system needs. Refuses if any of them has already been used.
  *   php bin/install.php medicines-sheet FILE.csv
  *                                        Propose the pharmacy medicine list from the Price List ("Other")
  *                                        and the store's medicines, for the clinic to check in Excel.
@@ -357,6 +360,57 @@ function resetDatabase(): void
     seed();
 }
 
+/** Prices the system looks up by code: visit consultations and the two frame prices. Never cleared. */
+const REQUIRED_PRICE_CODES = ['CONS-NORMAL', 'CONS-FAST', 'CONS-FOLLOWUP', 'CONS-SURG-FOLLOWUP', 'CONS-FOLLOWUP-FAST',
+    'FRAME-INTERNAL', 'FRAME-EXTERNAL'];
+
+/**
+ * A new clinic starts with the prototype's example medicines and prices. Before go-live they are
+ * cleared so the clinic's own lists can go in. Only possible while none of them has been used:
+ * a prescription, bill, stock movement or store link keeps the whole clear from happening.
+ * Operation templates hang off surgery prices, so they go too; `seed` re-attaches them by name
+ * once the clinic's own surgeries and medicines are in.
+ */
+function clearCatalogue(): void
+{
+    loadConfig();
+    Database::use(migrateConnection());
+    [$keep, $keepParams] = Database::in('k', REQUIRED_PRICE_CODES);
+    $drugs = (int) Database::value('SELECT COUNT(*) FROM drugs');
+    $prices = (int) Database::value("SELECT COUNT(*) FROM price_items WHERE code NOT IN ($keep)", $keepParams);
+    if ($drugs === 0 && $prices === 0) {
+        out('Nothing to clear: no medicines, and only the required prices.');
+        return;
+    }
+    out("This removes $drugs medicine(s) with their pharmacy stock rows, $prices price(s) and their operation templates.");
+    out('Kept: ' . implode(', ', REQUIRED_PRICE_CODES) . ' (set their real amounts in the Price List).');
+    if (getenv('KSI_CONFIRM_CLEAR') !== 'yes' && prompt('Type CLEAR to continue') !== 'CLEAR') {
+        fail('Aborted.');
+    }
+
+    $removed = $prices . ' price(s)';
+    try {
+        Database::transaction(function () use ($keep, $keepParams): void {
+            $removedItems = "SELECT id FROM price_items WHERE code NOT IN ($keep)";
+            Database::execute('DELETE FROM operation_template_medicines');
+            Database::execute("DELETE FROM operation_templates WHERE price_item_id IN ($removedItems)", $keepParams);
+            Database::execute('DELETE FROM pharmacy_stock');
+            Database::execute('DELETE FROM drugs');
+            Database::execute("DELETE FROM price_history WHERE price_item_id IN ($removedItems)", $keepParams);
+            Database::execute("DELETE FROM price_items WHERE code NOT IN ($keep)", $keepParams);
+        });
+    } catch (PDOException $e) {
+        if ($e->getCode() === '23000') {
+            fail('Nothing was removed: some of these medicines or prices are already used (a bill, prescription, '
+                . 'stock movement, booking or store item points at them).');
+        }
+        throw $e;
+    }
+    Audit::log('settings', 'catalogue.cleared', "Example catalogue cleared: $drugs medicine(s), $removed", 'catalogue', 'example', null,
+        ['user_id' => null, 'username' => 'installer', 'display' => 'System installer']);
+    out("Removed $drugs medicine(s) and $removed. Add the clinic's own prices and medicines, then run: php bin/install.php seed");
+}
+
 // ─── Pharmacy medicine list (UAT round 2) ────────────────────────────────
 // The clinic typed medicine prices into the Price List and medicines into the
 // store, neither of which the pharmacy reads. These two commands turn that into
@@ -633,7 +687,8 @@ match ($command) {
     'create-admin' => createAdmin(),
     'crypto-selftest' => cryptoSelfTest(),
     'reset' => resetDatabase(),
+    'clear-catalogue' => clearCatalogue(),
     'medicines-sheet' => medicinesSheet($argv[2] ?? fail('Usage: php bin/install.php medicines-sheet FILE.csv')),
     'medicines-apply' => medicinesApply($argv[2] ?? fail('Usage: php bin/install.php medicines-apply FILE.csv')),
-    default => fail('Usage: php bin/install.php setup|init-config|create-db|migrate|grant|seed|create-admin|crypto-selftest|reset|medicines-sheet|medicines-apply'),
+    default => fail('Usage: php bin/install.php setup|init-config|create-db|migrate|grant|seed|create-admin|crypto-selftest|reset|clear-catalogue|medicines-sheet|medicines-apply'),
 };

@@ -268,11 +268,17 @@ return static function (PDO $pdo): void {
     }
 
     // ── Price list (unconfirmed until finance signs off) ──────────────────
+    // The consultation prices are always needed: registering a visit bills one of them.
+    // The rest are the prototype's example prices, added only to a brand-new install (no users
+    // yet), so a clinic that cleared them for its own list never sees them come back.
+    $fresh = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn() === 0;
     $prices = [
         ['CONS-NORMAL', 'consultation', 'Consultation — Normal', 25000],
         ['CONS-FAST', 'consultation', 'Consultation — Fast Track', 40000],
         ['CONS-FOLLOWUP', 'consultation', 'Doctor Follow-Up', 15000],
         ['CONS-SURG-FOLLOWUP', 'consultation', 'Surgery Follow-Up', 15000],
+    ];
+    $examplePrices = [
         ['INV-OCT', 'investigation', 'OCT Scan', 80000],
         ['INV-AB-SCAN', 'investigation', 'A/B Scan', 65000],
         ['INV-VISUAL-FIELD', 'investigation', 'Visual Field', 55000],
@@ -309,6 +315,9 @@ return static function (PDO $pdo): void {
         ['LENS-PHOTOCHROMIC', 'lens', 'Photochromic SV', 110000],
         ['LENS-BLUE-LIGHT', 'lens', 'Blue-Light SV', 80000],
     ];
+    if ($fresh) {
+        $prices = array_merge($prices, $examplePrices);
+    }
     $insertPrice = $pdo->prepare(
         'INSERT IGNORE INTO price_items (code, category, name, unit_price, currency, is_confirmed, created_at) VALUES (:c, :cat, :n, :p, :cur, 0, UTC_TIMESTAMP(3))'
     );
@@ -325,6 +334,6 @@ return static function (PDO $pdo): void {
     // Laser therapy asks for its laser type when a booking is made.
     $pdo->exec("UPDATE price_items SET is_laser = 1 WHERE code = 'INV-LASER'");
 
-    (require __DIR__ . '/clinical.php')($pdo);
+    (require __DIR__ . '/clinical.php')($pdo, $fresh);
     (require __DIR__ . '/operation_templates.php')($pdo);
 };
