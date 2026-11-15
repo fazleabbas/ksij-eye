@@ -14,15 +14,19 @@ const test = (await get('prices?category=investigation')).items.find(i => i.is_a
 const quote = (await get('visits/quote?' + new URLSearchParams({
   patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'investigation', investigation_item_id: test.id,
 }))).quote;
-equal('reception charges the consultation, not the test', quote.bill_type, 'consultation');
+equal('the visit fee is the consultation; the test is billed on its own', quote.bill_type, 'consultation');
 
 const visit = (await post('visits', {
   patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'investigation',
   investigation_item_id: test.id, investigation_eye: 'left', investigation_reason: 'Blurred vision, query glaucoma',
 })).visit;
-const visitBills = (await get('bills?status=pending')).bills.filter(b => b.visit_no === visit.visit_no);
-equal('one bill at reception', visitBills.length, 1);
-equal('and it is the consultation', visitBills[0]?.bill_type, 'consultation');
+// Searched by the patient: a busy local database has more open bills than one page holds.
+const atReception = (await get(`bills?status=pending&search=reg${patient.reg_no}`)).bills.filter(b => b.visit_no === visit.visit_no);
+equal('two separate bills go to the cashier at reception', atReception.length, 2);
+const visitBills = atReception.filter(b => b.bill_type === 'consultation');
+equal('one is the consultation', visitBills.length, 1);
+const testBill = atReception.find(b => b.bill_type === 'investigation');
+check('the other is the test, at its price', testBill && Number(testBill.net_amount ?? testBill.amount) === Number(test.unit_price), JSON.stringify(testBill));
 
 const bookingId = Number(sql(`SELECT id FROM diagnostic_bookings WHERE visit_id = ${visit.id}`));
 check('the test is booked in Diagnostics straight away', bookingId > 0);
@@ -32,11 +36,8 @@ equal('and eye', booking.eye, 'left');
 equal('without a referring doctor it says so', booking.referring.name, 'Reception — no referring doctor');
 equal('the reason travels with it', booking.remark, 'Blurred vision, query glaucoma');
 
-await post(`diagnostics/bookings/${bookingId}/check-in`, { no_charge: false });
-const allBills = (await get('bills?status=pending')).bills.filter(b => b.patient?.id === patient.id || b.visit_no === visit.visit_no);
-const testBill = allBills.find(b => b.bill_type === 'investigation');
-check('check-in raises the test as its own bill', !!testBill, JSON.stringify(allBills.map(b => b.bill_type)));
-equal('two separate bills at the cashier', allBills.length, 2);
+equal('the patient shows as arrived at Diagnostics, no check-in needed', booking.status, 'arrived');
+equal('the booking carries the test bill', booking.bill?.bill_no, testBill?.bill_no);
 
 await post(`bills/${visitBills[0].id}/pay`, { method: 'cash', row_version: visitBills[0].row_version });
 equal('once paid, the visit waits for the investigation',
@@ -44,6 +45,17 @@ equal('once paid, the visit waits for the investigation',
 await payDiagnostic(bookingId);
 await put(`diagnostics/bookings/${bookingId}/report`, { reporting_user_id: me.id, result: 'Cup-disc ratio 0.6 left.', comments: '' });
 equal('reporting the test ends the visit', sql(`SELECT status FROM visits WHERE id = ${visit.id}`), 'completed');
+
+// Cancelling an unpaid investigation visit takes both bills and the Diagnostics entry with it.
+const dropped = (await post('visits', {
+  patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'investigation', confirm_open_visit: true,
+  investigation_item_id: test.id, investigation_eye: 'right', investigation_reason: 'Changed mind',
+})).visit;
+await post(`visits/${dropped.id}/cancel`, { reason: 'Patient left before paying' });
+equal('both bills are cancelled with the visit',
+  sql(`SELECT GROUP_CONCAT(DISTINCT status) FROM bills WHERE visit_id = ${dropped.id}`), 'cancelled');
+equal('and the test leaves the Diagnostics list',
+  sql(`SELECT status FROM diagnostic_bookings WHERE visit_id = ${dropped.id}`), 'cancelled');
 
 // ─── Surgery and procedures, and medicines bought outside ─────────────────
 async function doctorVisit(lastName, tail) {
@@ -55,7 +67,7 @@ async function doctorVisit(lastName, tail) {
   const v = (await post('visits', {
     patient_id: p.id, visit_type: 'consultation', sub_type: 'normal', destination: 'doctor_room', room: 'Room 1',
   })).visit;
-  const b = (await get('bills?status=pending')).bills.find(x => x.visit_no === v.visit_no);
+  const b = (await get(`bills?status=pending&search=reg${p.reg_no}`)).bills.find(x => x.visit_no === v.visit_no);
   await post(`bills/${b.id}/pay`, { method: 'cash', row_version: b.row_version });
   await post(`ophthalmology/visits/${v.id}/claim`);
   return { patient: p, visit: v };
@@ -109,7 +121,7 @@ await post(`pharmacy/stock/${drug.id}`, { change: 10, reason: 'received', note: 
 const counter = await post('pharmacy/walk-in-sales', {
   name: `Counter ${run}`, phone: `25574${run}7`, items: [{ drug_id: drug.id, quantity: 1, unit_price: 2500 }],
 });
-const counterBill = (await get('bills?status=pending')).bills.find(b => b.bill_no === counter.order.bill.bill_no);
+const counterBill = (await get(`bills?status=pending&search=${counter.order.bill.bill_no}`)).bills.find(b => b.bill_no === counter.order.bill.bill_no);
 const paid = await post(`bills/${counterBill.id}/pay`, { method: 'cash', row_version: counterBill.row_version });
 check('paying a counter sale returns its receipt', !!paid.receipt?.receipt_no, JSON.stringify(paid).slice(0, 120));
 equal('made out to the walk-in customer', paid.receipt?.patient.full_name, `Counter ${run}`);

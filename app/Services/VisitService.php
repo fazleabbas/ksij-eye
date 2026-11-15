@@ -48,7 +48,7 @@ final class VisitService
     public static function quote(int $patientId, string $visitType, string $subType, string $destination, ?int $investigationItemId, bool $fastTrack = false): array
     {
         // A visit for an investigation pays the consultation here; the test has its own bill,
-        // raised when the patient checks in at Diagnostics.
+        // raised alongside it when the visit is created.
         if ($destination === 'investigation' && !Database::value(
             'SELECT 1 FROM price_items WHERE id = :id AND category = :c AND is_active = 1',
             ['id' => (int) $investigationItemId, 'c' => 'investigation']
@@ -288,5 +288,19 @@ final class VisitService
                 $params + ['by' => $userId, 'by2' => $userId]
             );
         }
+        // A test booked by this visit at reception goes with it; tests booked elsewhere stay.
+        Database::execute(
+            "UPDATE approval_requests ar JOIN diagnostic_bookings db ON db.id = ar.booking_id
+                SET ar.status = 'rejected', ar.decided_at = UTC_TIMESTAMP(3), ar.decided_by = :by,
+                    ar.decision_remarks_enc = :r, ar.row_version = ar.row_version + 1
+              WHERE ar.status = 'pending' AND db.visit_id = :v AND db.source = 'visit'",
+            ['by' => $userId, 'v' => $visitId, 'r' => Crypto::encrypt('Closed automatically: the visit was cancelled.', 'approval_requests.decision_remarks')]
+        );
+        Database::execute(
+            "UPDATE diagnostic_bookings SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(3), updated_at = UTC_TIMESTAMP(3),
+                    updated_by = :by, row_version = row_version + 1
+              WHERE visit_id = :v AND source = 'visit' AND status IN ('scheduled', 'arrived', 'cancellation_requested')",
+            ['by' => $userId, 'v' => $visitId]
+        );
     }
 }

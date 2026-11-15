@@ -286,8 +286,12 @@ const vsQuote = uiDebounce(async () => {
            ? 'Emergency: the patient is sent for treatment now and the bill stays open at the cashier.'
            : 'The patient pays at the cashier, then joins the queue.'}</div>`;
     if (destination === 'investigation') {
-      box.innerHTML += `<div class="muted-note" style="margin-top:6px">The investigation goes straight to Diagnostics and is
-        billed separately when the patient checks in there.</div>`;
+      const test = (VISIT_UI.options.investigations || []).find(i => String(i.id) === String(investigation));
+      if (test) {
+        box.innerHTML += `<div class="dcb-row" style="margin-top:6px"><span class="dcb-label">${KSI.esc(test.name)} (separate bill)</span><strong>${uiMoney(test.price)}</strong></div>`;
+      }
+      box.innerHTML += `<div class="muted-note" style="margin-top:6px">The investigation has its own bill, sent to the cashier now with
+        the consultation bill. The patient goes straight to Diagnostics; the report is written once the test is paid.</div>`;
     }
   } catch (error) {
     if (call === VISIT_UI.quoteSeq) box.innerHTML = `<div class="field-error">${KSI.esc(error.message)}</div>`;

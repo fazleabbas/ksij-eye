@@ -213,13 +213,17 @@ final class VisitController
                 [['price_item_id' => $quote['price_item_id'], 'description' => $quote['description'], 'quantity' => 1, 'unit_price' => $quote['gross_amount']]],
                 $quote['exempt'], $quote['exemption_reason'], $emergency, $ctx->userId
             );
-            // The test goes straight onto the Diagnostics list; its bill is raised at check-in.
+            // The test goes straight onto the Diagnostics list as arrived, and its own bill goes to the
+            // cashier now, beside the consultation bill, so the patient pays both in one trip.
             if ($d['destination'] === 'investigation') {
-                DiagnosticService::book([
+                $bookings = DiagnosticService::book([
                     'patient_id' => (int) $patient['id'], 'referring_user_id' => $d['referring_doctor_id'],
                     'eye' => $d['investigation_eye'], 'timing' => 'now', 'scheduled_for' => gmdate('Y-m-d H:i:s'),
                     'procedures' => [['price_item_id' => (int) $d['investigation_item_id'], 'remark' => $d['investigation_reason']]],
                 ], $ctx, 'visit', $visitId);
+                foreach ($bookings as $booking) {
+                    DiagnosticService::checkIn((int) $booking['id'], null, null, $ctx);
+                }
             }
             return [$visitId, $visitNo, $quote];
         });

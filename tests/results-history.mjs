@@ -36,11 +36,16 @@ async function newPatient(lastName) {
   })).patient;
 }
 async function pay(visitNo) {
-  const bill = (await get('bills?status=pending')).bills.find(b => b.visit_no === visitNo);
-  await post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
+  // Found directly: a busy local database has more open bills than one page of the list holds.
+  const [id, rowVersion] = sql(`SELECT b.id, b.row_version FROM bills b JOIN visits v ON v.id = b.visit_id
+    WHERE v.visit_no = '${visitNo}' AND b.bill_type = 'consultation' AND b.status = 'pending'`).split('	');
+  await post(`bills/${id}/pay`, { method: 'cash', row_version: Number(rowVersion) });
 }
 async function reportTest(bookingId, text) {
-  await post(`diagnostics/bookings/${bookingId}/check-in`, { no_charge: false });
+  // A test sent from reception arrives already checked in, with its bill raised.
+  if (sql(`SELECT status FROM diagnostic_bookings WHERE id = ${bookingId}`) === 'scheduled') {
+    await post(`diagnostics/bookings/${bookingId}/check-in`, { no_charge: false });
+  }
   await payDiagnostic(bookingId);
   await put(`diagnostics/bookings/${bookingId}/report`, { reporting_user_id: admin.id, result: text, comments: 'Repeat in 6 months' });
 }
