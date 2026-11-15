@@ -30,6 +30,7 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `pharmacy-refill.mjs` | Paid refills: own order at today's price, pay first, hand over; old free refill closed |
 | `pharmacy-refill-browser.mjs` | The Refill window on screen |
 | `theatre-errors-browser.mjs` | Pre-op errors show under the right box; unplaced errors name their field |
+| `postop-layout-browser.mjs` | Post-Op: case list with filters and last/next review; a case opens with its reviews and New Post-Op Visit on the left, the review on the right, filling the screen |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

@@ -212,6 +212,24 @@ td .visit-id { white-space: nowrap; }
 .th-page .stats-row .stat-card { flex: 1 1 130px; }
 .th-queue-panel { display: flex; flex-direction: column; min-width: 0; }
 .th-queue { overflow-y: auto; max-height: calc(100vh - 300px); }
+/* Post-op: a case list, then one case filling the screen under the page header.
+   The visit list and the review form each scroll on their own; the page doesn't. */
+#module-theatre-postop.th-postop-detail-mode { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#module-theatre-postop.th-postop-detail-mode > .page-header { flex-shrink: 0; }
+.th-postop-detail { flex: 1; min-height: 0; margin: 16px 28px 24px; overflow: hidden; }
+.th-postop-detail .pop-detail-layout { grid-template-rows: minmax(0, 1fr); }
+.th-postop-detail .pop-detail-left { overflow: hidden; min-height: 0; }
+.th-postop-detail .pop-detail-right { min-height: 0; }
+.th-postop-name { font-size: 13px; font-weight: 700; color: var(--text-1); margin-bottom: 2px; }
+.th-postop-new { width: 100%; justify-content: center; margin-top: 10px; }
+.th-postop-visits { flex: 1; min-height: 0; overflow-y: auto; }
+.th-postop-visits .pop-visit-item { border-left: 3px solid transparent; padding-left: 13px; }
+.th-postop-visits .pop-visit-item.selected { border-left-color: var(--teal); }
+@media (max-width: 768px) {
+  #module-theatre-postop.th-postop-detail-mode { display: block; }
+  .th-postop-detail { margin: 12px 16px 16px; overflow: visible; }
+  .th-postop-detail .pop-detail-left { overflow: visible; }
+}
 
 /* ─── Stores (Phase 6) ──────────────────────────────────────────────────── */
 .st-page .stats-row .stat-card { flex: 1 1 140px; }

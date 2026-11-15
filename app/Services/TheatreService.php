@@ -37,7 +37,10 @@ final class TheatreService
                 TRIM(CONCAT_WS(' ', du.first_name, du.last_name)) AS discharged_by_name,
                 pre.status AS preop_status, pre.id AS preop_id,
                 op.status AS operation_status, op.id AS operation_id, op.started_at, op.ended_at,
-                (SELECT COUNT(*) FROM theatre_postop_visits pv WHERE pv.booking_id = b.id) AS postop_visits
+                (SELECT COUNT(*) FROM theatre_postop_visits pv WHERE pv.booking_id = b.id) AS postop_visits,
+                (SELECT MAX(pv.visit_date) FROM theatre_postop_visits pv WHERE pv.booking_id = b.id) AS last_review_date,
+                (SELECT f.due_date FROM theatre_postop_visits pv JOIN follow_ups f ON f.id = pv.follow_up_id
+                  WHERE pv.booking_id = b.id ORDER BY pv.visit_number DESC LIMIT 1) AS next_review_date
            FROM theatre_bookings b
            JOIN patients p ON p.id = b.patient_id
            JOIN users su ON su.id = b.surgeon_user_id
@@ -168,6 +171,8 @@ final class TheatreService
             'started_at' => Format::utc($r['started_at']),
             'ended_at' => Format::utc($r['ended_at']),
             'postop_visit_count' => (int) $r['postop_visits'],
+            'last_review_date' => $r['last_review_date'],
+            'next_review_date' => $r['next_review_date'],
             'cancelled_at' => Format::utc($r['cancelled_at']),
             'discharged_at' => Format::utc($r['discharged_at']),
             'discharged_by' => $r['discharged_by_name'] ?: null,

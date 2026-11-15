@@ -19,6 +19,7 @@ const TH = {
   biometryNeeded: false,
   meds: [],             // medicine lines on the open form
   postopVisit: null,    // post-op visit being written
+  postopFormOpen: false, // right panel shows a review (not the "no review yet" note)
   addendum: null,       // { source, record_id }
   pickerReady: false,
 };
@@ -37,6 +38,7 @@ function thFilters(prefix) {
     search: value(`${prefix}-search`),
     status: value(`${prefix}-filter-status`),
     surgeon_user_id: value(`${prefix}-filter-surgeon`),
+    surgery_item_id: value(`${prefix}-filter-surgery`),
     payment: value(`${prefix}-filter-payment`),
     from: value(`${prefix}-from`),
     to: value(`${prefix}-to`),
@@ -74,7 +76,7 @@ async function thOpenBookings() {
 
 function thFillSurgeonFilters() {
   const surgeons = (TH.options?.surgeons || []).map(s => [s.id, s.name]);
-  ['th-book-filter-surgeon', 'th-hist-filter-surgeon'].forEach(id => {
+  ['th-book-filter-surgeon', 'th-hist-filter-surgeon', 'th-postop-filter-surgeon'].forEach(id => {
     const select = document.getElementById(id);
     if (!select || select.dataset.filled) return;
     admFillSelect(id, 'All surgeons', surgeons);
@@ -962,42 +964,125 @@ function thRemoveMed(index) {
 
 // ─── Post-op ──────────────────────────────────────────────────────────────
 
+// The page opens on a list of every patient under post-op care. Opening a case
+// shows its reviews on the left (with "New Post-Op Visit") and one review on the right.
+
 async function thOpenPostop() {
   await thOptions();
-  await thLoadPostop();
+  const surgery = document.getElementById('th-postop-filter-surgery');
+  if (surgery && !surgery.dataset.filled) {
+    admFillSelect('th-postop-filter-surgery', 'All surgeries', (TH.options.surgeries || []).map(s => [s.id, s.name]));
+    surgery.dataset.filled = '1';
+  }
+  thFillSurgeonFilters();
+  thPostopShowList();
+}
+
+function thPostopShowList() {
+  TH.current = null;
+  TH.postopVisit = null;
+  TH.postopFormOpen = false;
+  document.getElementById('module-theatre-postop').classList.remove('th-postop-detail-mode');
+  document.getElementById('th-postop-list-view').classList.remove('hidden');
+  document.getElementById('th-postop-detail-view').classList.add('hidden');
+  document.getElementById('th-postop-back').classList.add('hidden');
+  thLoadPostop();
 }
 
 async function thLoadPostop() {
-  const queue = document.getElementById('th-postop-queue');
-  if (!queue) return;
+  if (!document.getElementById('th-postop-tbody')) return;
+  if (!TH.postop.length) admTableMessage('th-postop-tbody', 9, 'Loading cases…');
   try {
     const { bookings } = await KSI.get('theatre/bookings', { scope: 'postop', ...thFilters('th-postop') }, { trackActivity: false });
     TH.postop = bookings;
-    thRenderQueue('th-postop-queue', 'th-postop-count', bookings, thSelectPostop, b => `<span class="badge badge-normal">${b.postop_visit_count} review${b.postop_visit_count === 1 ? '' : 's'}</span>`);
-    if (TH.current && bookings.some(b => b.id === TH.current.id)) thRenderPostopPanel();
-    else if (!bookings.length) document.getElementById('th-postop-panel').innerHTML = thEmptyPanel('No patients are under post-op care.');
+    thRenderPostopList();
   } catch (error) {
-    queue.innerHTML = '<div class="muted-note" style="padding:20px">Could not load the queue.</div>';
+    admTableMessage('th-postop-tbody', 9, 'Could not load the cases.');
   }
+}
+
+function thRenderPostopList() {
+  const rows = TH.postop;
+  document.getElementById('th-postop-count').textContent = `${rows.length} case${rows.length === 1 ? '' : 's'}`;
+  if (!rows.length) {
+    admTableMessage('th-postop-tbody', 9, 'No patients are under post-op care.');
+    return;
+  }
+  const today = uiToday();
+  document.getElementById('th-postop-tbody').innerHTML = rows.map(b => {
+    const due = b.next_review_date;
+    const overdue = due && due < today;
+    return `<tr class="th-postop-row" style="cursor:pointer" onclick="thSelectPostop(${b.id})">
+      <td>${thPatientCell(b)}</td>
+      <td>${thSurgeryCell(b)}</td>
+      <td>${KSI.esc(thEye(b.eye))}</td>
+      <td>${KSI.esc(b.surgeon.name)}</td>
+      <td>${b.started_at ? KSI.fmtDateTime(b.started_at) : KSI.fmtDate(b.scheduled_for)}</td>
+      <td><span class="badge badge-normal">${b.postop_visit_count}</span></td>
+      <td>${b.last_review_date ? KSI.fmtDate(b.last_review_date) : '<span class="muted-note">None yet</span>'}</td>
+      <td>${due ? `<span${overdue ? ' style="color:var(--red);font-weight:600"' : ''}>${KSI.fmtDate(due)}${overdue ? ' · overdue' : ''}</span>` : '<span class="muted-note">—</span>'}</td>
+      <td><div class="row-actions"><button class="action-btn action-view" onclick="event.stopPropagation(); thSelectPostop(${b.id})">Open</button></div></td>
+    </tr>`;
+  }).join('');
 }
 
 async function thSelectPostop(id) {
   const { booking } = await KSI.get(`theatre/bookings/${id}`);
   TH.current = booking;
-  TH.postopVisit = null;
   TH.meds = [];
-  thTemplateMeds();
-  thRenderQueue('th-postop-queue', 'th-postop-count', TH.postop, thSelectPostop, b => `<span class="badge badge-normal">${b.postop_visit_count} review${b.postop_visit_count === 1 ? '' : 's'}</span>`);
+  const visits = booking.postop_visits || [];
+  // A patient goes home after surgery, so a case with no reviews waits for
+  // "New Post-Op Visit"; otherwise the latest review opens.
+  TH.postopVisit = visits.length ? visits[visits.length - 1] : null;
+  TH.postopFormOpen = visits.length > 0;
+  document.getElementById('module-theatre-postop').classList.add('th-postop-detail-mode');
+  document.getElementById('th-postop-list-view').classList.add('hidden');
+  document.getElementById('th-postop-detail-view').classList.remove('hidden');
+  document.getElementById('th-postop-back').classList.remove('hidden');
+  document.getElementById('th-postop-name').textContent = booking.patient.full_name;
+  document.getElementById('th-postop-case-line').textContent =
+    `${booking.patient.reg_no} · ${booking.surgery?.name || 'Procedure'} · ${thEye(booking.eye)} · operated ${KSI.fmtDate(booking.operation?.ended_at || booking.started_at || booking.scheduled_for)}`;
   thRenderPostopPanel();
+}
+
+function thRenderPostopVisits() {
+  const b = TH.current;
+  const visits = b.postop_visits || [];
+  document.getElementById('th-postop-new').classList.toggle('hidden', !KSI.can('theatre.postop.record'));
+  const container = document.getElementById('th-postop-visits');
+  container.innerHTML = visits.length
+    ? visits.slice().reverse().map(v => `<div class="pop-visit-item ${TH.postopVisit?.id === v.id ? 'selected' : ''}" onclick="thEditPostopVisit(${v.id})">
+        <div class="pop-visit-num">Review ${v.visit_number}${v.status === 'draft' ? ' · draft' : ''}</div>
+        <div class="pop-visit-date">${KSI.fmtDate(v.visit_date)}</div>
+        <div class="pop-visit-meta">${[
+          v.va_right || v.va_left ? `VA R ${KSI.esc(v.va_right || '—')} / L ${KSI.esc(v.va_left || '—')}` : '',
+          v.iop_right !== null || v.iop_left !== null ? `IOP ${v.iop_right ?? '—'}/${v.iop_left ?? '—'}` : '',
+          v.pain_score !== null ? `pain ${v.pain_score}/10` : '',
+        ].filter(Boolean).join(' · ') || 'No measurements recorded'}</div>
+      </div>`).join('')
+    : '<div class="muted-note" style="padding:20px;text-align:center">No reviews yet.</div>';
 }
 
 function thRenderPostopPanel() {
   const panel = document.getElementById('th-postop-panel');
-  if (!panel) return;
+  if (!panel || !TH.current) return;
+  thRenderPostopVisits();
   const b = TH.current;
   const visits = b.postop_visits || [];
+  const canRecord = KSI.can('theatre.postop.record');
+
+  if (!TH.postopFormOpen) {
+    panel.innerHTML = `
+      ${uiPatientCard(b.patient)}
+      <div class="cl-queue-empty" style="margin-top:24px">
+        <div style="font-size:14px;font-weight:600;color:var(--text-2)">No review recorded yet</div>
+        <div style="margin-top:6px">The patient goes home after surgery. Record the first review when they come back${canRecord ? ' — click <strong>New Post-Op Visit</strong>' : ''}.</div>
+      </div>`;
+    return;
+  }
+
   const editing = TH.postopVisit;
-  const locked = editing && editing.status === 'completed' && !editing.correctable_until;
+  const locked = (editing && editing.status === 'completed' && !editing.correctable_until) || !canRecord;
   const value = v => v ?? '';
   // The first review starts from the template: medicines, instructions in the recovery notes, review date.
   const firstReview = !editing && !visits.length && !!b.template;
@@ -1012,19 +1097,9 @@ function thRenderPostopPanel() {
     </div>
     ${uiPatientCard(b.patient)}
 
-    <div class="form-label" style="margin-top:10px">Reviews so far</div>
-    ${visits.length ? `<div class="cl-file-list">${visits.map(v => `<div class="cl-file">
-      <div>
-        <div><strong>Review ${v.visit_number}</strong> · ${KSI.esc(v.visit_date)} ${v.status === 'draft' ? '<span class="muted-note">(draft)</span>' : ''}</div>
-        <div class="muted-note">${[v.va_right ? `VA R ${KSI.esc(v.va_right)}` : '', v.iop_right ? `IOP R ${v.iop_right}` : '', v.pain_score !== null ? `pain ${v.pain_score}/10` : ''].filter(Boolean).join(' · ')}</div>
-      </div>
-      <button class="link-btn" onclick="thEditPostopVisit(${v.id})">Open</button>
-    </div>`).join('')}</div>` : '<div class="muted-note">No reviews recorded yet.</div>'}
-
-    ${KSI.can('theatre.postop.record') ? `
       <div class="form-label" style="margin-top:14px">${editing ? `Review ${editing.visit_number}` : 'New review'}</div>
       ${firstReview ? `<div class="muted-note">Started from the ${KSI.esc(b.template.names.join(' + '))} template: medicines, instructions and the review date — change anything as needed.</div>` : ''}
-      ${locked ? '<div class="cl-lock-note">This review can no longer be changed. Add an addendum instead.</div>' : ''}
+      ${locked && canRecord ? '<div class="cl-lock-note">This review can no longer be changed. Add an addendum instead.</div>' : ''}
       <div class="form-grid">
         <div class="form-group" data-field="visit_date"><label class="form-label">Date <span class="required">*</span></label>
           <input type="date" class="form-input" id="th-pop-date" value="${value(editing?.visit_date) || uiToday()}" ${locked ? 'disabled' : ''}></div>
@@ -1072,24 +1147,25 @@ function thRenderPostopPanel() {
       ${editing?.addenda?.length ? `<div class="cl-addenda"><div class="form-label">Addenda</div>
         ${editing.addenda.map(a => `<div class="cl-addendum"><div class="cl-addendum-head">${KSI.esc(a.reason)} — ${KSI.esc(a.created_by)} · ${KSI.fmtDateTime(a.created_at)}</div><div>${KSI.esc(a.note)}</div></div>`).join('')}</div>` : ''}
 
-      <div class="modal-footer" style="padding:16px 0 0">
-        ${editing ? `<button class="btn btn-secondary" onclick="thNewPostopVisit()">New review</button>` : ''}
+      ${canRecord ? `<div class="modal-footer" style="padding:16px 0 0">
         ${locked ? `<button class="btn btn-secondary" onclick="thOpenAddendum('theatre_postop', ${editing.id})">Add addendum</button>` : `
           <button class="btn btn-secondary" onclick="thSavePostop(this, false)">Save draft</button>
           <button class="btn btn-primary" onclick="thSavePostop(this, true)">Save review</button>`}
         ${visits.length ? `<button class="btn btn-danger" onclick="thOpenDischarge()">Discharge</button>` : ''}
       </div>` : ''}`;
-  if (!editing?.prescription_no) thRenderMeds('pop');
+  if (!editing?.prescription_no && !locked) thRenderMeds('pop');
 }
 
 function thEditPostopVisit(visitId) {
   TH.postopVisit = (TH.current.postop_visits || []).find(v => v.id === visitId) || null;
+  TH.postopFormOpen = true;
   TH.meds = [];
   thRenderPostopPanel();
 }
 
 function thNewPostopVisit() {
   TH.postopVisit = null;
+  TH.postopFormOpen = true;
   TH.meds = [];
   thTemplateMeds();
   thRenderPostopPanel();
@@ -1117,12 +1193,13 @@ async function thSavePostop(button, complete) {
         complete,
         row_version: TH.postopVisit?.row_version || 0,
       });
-      TH.current = result.booking;
-      TH.postopVisit = result.visits[result.visits.length - 1];
+      const savedId = TH.postopVisit?.id;
+      TH.current = { ...result.booking, postop_visits: result.visits };
+      TH.postopVisit = result.visits.find(v => v.id === savedId) || result.visits[result.visits.length - 1];
       TH.meds = [];
       showToast('Review saved', `${result.booking.booking_no} — review ${TH.postopVisit.visit_number}`, 'success');
-      await thLoadPostop();
       thRenderPostopPanel();
+      thLoadPostop();
     } catch (error) {
       KSI.reportError(error, panel, 'Could not save the review');
     }
@@ -1149,10 +1226,7 @@ async function thSubmitDischarge(button) {
       });
       closeModal('modal-theatre-discharge');
       showToast('Discharged', `${booking.booking_no} is now in theatre history.`, 'success');
-      TH.current = null;
-      TH.postopVisit = null;
-      await thLoadPostop();
-      document.getElementById('th-postop-panel').innerHTML = thEmptyPanel('Choose a patient from the list.');
+      thPostopShowList();
     } catch (error) {
       KSI.reportError(error, modal, 'Could not discharge the patient');
     }

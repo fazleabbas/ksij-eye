@@ -164,23 +164,54 @@
             <span class="crumb-active">Post-Op Care</span>
           </div>
         </div>
+        <div class="page-actions">
+          <button class="btn btn-secondary hidden" id="th-postop-back" onclick="thPostopShowList()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Back to list
+          </button>
+        </div>
       </div>
-      <div class="section-padding" style="padding-top:0">
-        <div class="clinical-grid">
-          <div class="card th-queue-panel">
-            <div class="card-head">
-              <div class="card-title">Under post-op care</div>
-              <span class="table-count" id="th-postop-count">0 cases</span>
+
+      <!-- List: every patient still under post-op care -->
+      <div class="section-padding" style="padding-top:0" id="th-postop-list-view">
+        <div class="card">
+          <div class="filters-bar">
+            <div class="search-wrap">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" class="search-input" id="th-postop-search" placeholder="Search patient name or file number…" oninput="uiDebounce(thLoadPostop, 350)()">
             </div>
-            <div class="filters-bar filters-bar-stacked">
-              <div class="search-wrap">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input type="text" class="search-input" id="th-postop-search" placeholder="Search patient…" oninput="uiDebounce(thLoadPostop, 350)()">
-              </div>
-            </div>
-            <div id="th-postop-queue" class="th-queue"></div>
+            <select class="filter-select" id="th-postop-filter-surgery" onchange="thLoadPostop()"></select>
+            <select class="filter-select" id="th-postop-filter-surgeon" onchange="thLoadPostop()"></select>
+            <input type="date" class="filter-select" id="th-postop-from" onchange="thLoadPostop()" title="Surgery date from">
+            <input type="date" class="filter-select" id="th-postop-to" onchange="thLoadPostop()" title="Surgery date to">
           </div>
-          <div class="card" id="th-postop-panel"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Patient</th><th>Surgery</th><th>Eye</th><th>Surgeon</th><th>Surgery date</th><th>Reviews</th><th>Last review</th><th>Next review</th><th>Action</th></tr>
+              </thead>
+              <tbody id="th-postop-tbody"></tbody>
+            </table>
+          </div>
+          <div class="table-footer"><span class="table-count" id="th-postop-count">0 cases</span></div>
+        </div>
+      </div>
+
+      <!-- Detail: one case — reviews on the left, the review form on the right -->
+      <div class="card th-postop-detail hidden" id="th-postop-detail-view">
+        <div class="pop-detail-layout">
+          <div class="pop-detail-left">
+            <div class="pop-detail-left-header">
+              <div class="th-postop-name" id="th-postop-name">—</div>
+              <div class="muted-note" id="th-postop-case-line">—</div>
+              <button class="btn btn-primary th-postop-new" id="th-postop-new" onclick="thNewPostopVisit()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                New Post-Op Visit
+              </button>
+            </div>
+            <div class="th-postop-visits" id="th-postop-visits"></div>
+          </div>
+          <div class="pop-detail-right"><div class="pop-form-wrap" id="th-postop-panel"></div></div>
         </div>
       </div>
     </div>

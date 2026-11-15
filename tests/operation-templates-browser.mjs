@@ -39,6 +39,8 @@ api.sql(`UPDATE theatre_bookings SET status = 'post_op' WHERE id = ${booking.id}
 await evaluate(`showModule('theatre-postop')`);
 await sleep(1000);
 await evaluate(`thSelectPostop(${booking.id})`);
+await waitUntil(`!!document.getElementById('th-postop-new') && !document.getElementById('th-postop-detail-view').classList.contains('hidden')`, 15000, 'post-op case');
+await evaluate(`thNewPostopVisit()`);
 await waitUntil(`!!document.getElementById('th-pop-recovery') && document.querySelectorAll('#th-pop-meds tr').length > 0`, 15000, 'post-op form');
 await sleep(500);
 const post = await evaluate(`({
