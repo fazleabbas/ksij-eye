@@ -37,7 +37,7 @@ final class PharmacyController
     public function index(Request $request): array
     {
         $ctx = Auth::require();
-        $scope = in_array($request->query('scope'), ['queue', 'dispensing', 'partial', 'completed'], true)
+        $scope = in_array($request->query('scope'), ['queue', 'dispensing', 'partial', 'completed', 'balance'], true)
             ? $request->query('scope') : 'queue';
         $orders = PharmacyService::listOrders($scope, [
             'search' => (string) $request->query('search'),
@@ -84,6 +84,26 @@ final class PharmacyController
         Audit::log('pharmacy', 'pharmacy.cancelled',
             "Cancelled what was left of {$order['order_no']}" . ($order['refund'] ? " — refund {$order['refund']['refund_no']}" : ''),
             'pharmacy_order', $order['order_no']);
+        return ['order' => $order];
+    }
+
+    /** The patient comes back for medicine they could not take before; that part is billed on its own. */
+    public function supplyBalance(Request $request, array $params): array
+    {
+        $ctx = Auth::require();
+        $order = PharmacyService::supplyBalance((int) $params['id'], $this->lines($request), $ctx);
+        Audit::log('pharmacy', 'pharmacy.balance_billed',
+            "Billed part of the balance of {$order['order_no']} — bill {$order['bill']['bill_no']}", 'pharmacy_order', $order['order_no']);
+        return ['order' => $order];
+    }
+
+    /** Nothing more will be collected on this prescription. */
+    public function closeBalance(Request $request, array $params): array
+    {
+        $ctx = Auth::require();
+        $v = Validator::make($request->all())->string('reason', true, 500, 3)->validate();
+        $order = PharmacyService::closeBalance((int) $params['id'], $v['reason'], $ctx);
+        Audit::log('pharmacy', 'pharmacy.balance_closed', "Closed the balance of {$order['order_no']}", 'pharmacy_order', $order['order_no']);
         return ['order' => $order];
     }
 

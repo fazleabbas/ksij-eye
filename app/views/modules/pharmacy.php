@@ -145,6 +145,40 @@
       </div>
     </div>
 
+    <!-- ══ MODULE: BALANCE TO COLLECT ══════════════════════════════════════ -->
+    <div id="module-pharm-balance" class="hidden pharm-page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Balance to Collect</div>
+          <div class="page-breadcrumb">
+            <span>Pharmacy</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="crumb-active">Balance to Collect</span>
+          </div>
+        </div>
+      </div>
+      <div class="section-padding" style="padding-top:0">
+        <div class="card">
+          <div class="filters-bar">
+            <div class="search-wrap">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" class="search-input" id="ph-bal-search" placeholder="Search patient, file number or order number…" oninput="uiDebounce(phLoadBalance, 350)()">
+            </div>
+          </div>
+          <div class="muted-note" style="padding:0 16px 10px">Prescriptions the patient could only take part of. They come straight here for the rest, at the price of their first visit.</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Order</th><th>Patient</th><th>Still to collect</th><th>Taken so far</th><th>Waiting since</th><th>Actions</th></tr>
+              </thead>
+              <tbody id="ph-bal-tbody"></tbody>
+            </table>
+          </div>
+          <div class="table-footer"><span class="table-count" id="ph-bal-count">0 orders</span></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ MODULE: REFILLS ═══════════════════════════════════════════════ -->
     <div id="module-pharm-refills" class="hidden pharm-page">
       <div class="page-header">

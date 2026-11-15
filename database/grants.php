@@ -73,6 +73,8 @@ return [
     'pharmacy_order_items'        => ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     'pharmacy_dispensings'        => ['SELECT', 'INSERT'],
     'pharmacy_dispensing_items'   => ['SELECT', 'INSERT'],
+    'pharmacy_balance_supplies'   => ['SELECT', 'INSERT', 'UPDATE'],
+    'pharmacy_balance_supply_items' => ['SELECT', 'INSERT'],
 
     // Theatre
     'theatre_bookings'            => ['SELECT', 'INSERT', 'UPDATE'],

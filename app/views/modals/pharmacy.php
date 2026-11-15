@@ -2,7 +2,7 @@
 
 <!-- ══ ORDER DETAIL AND REVIEW ═════════════════════════════════════════ -->
 <div class="modal-overlay" id="modal-pharm-order">
-  <div class="modal modal-lg">
+  <div class="modal modal-lg" style="max-width:960px">
     <div class="modal-header">
       <div>
         <div class="modal-title" id="ph-order-title">Medication order</div>

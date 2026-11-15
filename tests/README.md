@@ -21,6 +21,8 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `optometry-orders-browser.mjs` | The same on screen: Optometry cards and a new cataract booking filling its biometry |
 | `lens-change.mjs` | Optical changes the lens (confirm page, or unpaid order not with the supplier; bill re-raised); blocked once paid or sent |
 | `lens-change-browser.mjs` | The same on screen |
+| `pharmacy-balance.mjs` | Take part of a prescription now, collect the balance later at the locked price; cancelled part returns to the balance; close balance |
+| `pharmacy-balance-browser.mjs` | The same on screen: review note, Balance to Collect, Supply balance |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

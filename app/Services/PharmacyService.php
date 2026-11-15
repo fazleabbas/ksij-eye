@@ -25,6 +25,10 @@ final class PharmacyService
     private const ORDER_SELECT = "SELECT o.id, o.order_no, o.source, o.status, o.total_amount, o.refill_count, o.prescription_id,
                 o.patient_id, o.walkin_id, o.visit_id, o.bill_id, o.reviewed_at, o.completed_at, o.cancelled_at,
                 o.cancel_reason_enc, o.created_at, o.row_version, o.refund_id,
+                o.balance_closed_at, o.balance_close_reason_enc,
+                (SELECT COALESCE(SUM(GREATEST(CAST(bi.prescribed_qty AS SIGNED) - CAST(bi.quantity AS SIGNED), 0)), 0)
+                   FROM pharmacy_order_items bi WHERE bi.order_id = o.id) AS balance_qty,
+                TRIM(CONCAT_WS(' ', bcu.first_name, bcu.last_name)) AS balance_closed_by_name,
                 v.visit_no, v.is_fast_track AS visit_fast_track,
                 p.reg_no, p.first_name_enc, p.middle_name_enc, p.last_name_enc, p.gender, p.date_of_birth_enc, p.phone_enc,
                 w.walkin_no, w.name_enc AS walkin_name_enc, w.phone_enc AS walkin_phone_enc, w.gender AS walkin_gender, w.age_years,
@@ -45,7 +49,8 @@ final class PharmacyService
            LEFT JOIN users iu ON iu.id = pr.issued_by
            LEFT JOIN users au ON au.id = pr.amended_by
            LEFT JOIN users ru ON ru.id = o.reviewed_by
-           LEFT JOIN refunds r ON r.id = o.refund_id";
+           LEFT JOIN refunds r ON r.id = o.refund_id
+           LEFT JOIN users bcu ON bcu.id = o.balance_closed_by";
 
     // ─── Queue and lists ─────────────────────────────────────────────────
 
@@ -99,12 +104,12 @@ final class PharmacyService
         foreach ($items as $item) {
             Database::execute(
                 'INSERT INTO pharmacy_order_items (order_id, drug_id, description, dose, frequency, duration, instructions_enc,
-                                                   quantity, unit_price, catalogue_price)
-                 VALUES (:o, :drug, :desc, :dose, :freq, :duration, :instructions, :qty, :price, :price2)',
+                                                   quantity, prescribed_qty, unit_price, catalogue_price)
+                 VALUES (:o, :drug, :desc, :dose, :freq, :duration, :instructions, :qty, :qty2, :price, :price2)',
                 [
                     'o' => $orderId, 'drug' => (int) $item['drug_id'], 'desc' => mb_substr($item['name'], 0, 190),
                     'dose' => $item['dose'], 'freq' => $item['frequency'], 'duration' => $item['duration'],
-                    'instructions' => $item['instructions_enc'], 'qty' => (int) $item['quantity'],
+                    'instructions' => $item['instructions_enc'], 'qty' => (int) $item['quantity'], 'qty2' => (int) $item['quantity'],
                     'price' => (float) $item['unit_price'], 'price2' => (float) $item['unit_price'],
                 ]
             );
@@ -128,6 +133,11 @@ final class PharmacyService
         }
         $orderId = (int) $order['id'];
         $cancelledBill = null;
+        // A later part of the balance being billed: earlier parts were handed over, so nothing may change.
+        if (Database::value('SELECT 1 FROM pharmacy_dispensings WHERE order_id = :o LIMIT 1', ['o' => $orderId])) {
+            throw HttpException::conflict('pharmacy_locked', 'The pharmacy has already handed some of this medicine over, so the medicines it stocks can no longer change. '
+                . 'Ask the pharmacy to cancel what has not been handed over.');
+        }
         if ($order['status'] === 'awaiting_payment') {
             $bill = BillingService::lockBill((int) $order['bill_id']);
             if ($bill['status'] !== 'pending') {
@@ -182,9 +192,15 @@ final class PharmacyService
             'dispensing' => Database::in('s', ['paid', 'partially_dispensed']),
             'partial' => Database::in('s', ['partially_dispensed']),
             'completed' => Database::in('s', ['completed', 'cancelled']),
+            'balance' => Database::in('s', ['awaiting_payment', 'paid', 'partially_dispensed', 'completed']),
             default => Database::in('s', self::OPEN_STATUSES),
         };
         $where = ["o.status IN ($in)"];
+        if ($scope === 'balance') {
+            // Prescriptions with medicine still to collect.
+            $where[] = "o.source = 'prescription' AND o.balance_closed_at IS NULL
+                AND EXISTS (SELECT 1 FROM pharmacy_order_items bx WHERE bx.order_id = o.id AND bx.prescribed_qty > bx.quantity)";
+        }
         if ($scope === 'queue' && ($filters['status'] ?? '') !== '' && in_array($filters['status'], self::OPEN_STATUSES, true)) {
             $where = ['o.status = :status'];
             $params = ['status' => $filters['status']];
@@ -231,6 +247,7 @@ final class PharmacyService
         $order = self::present($row);
         $order['items'] = self::items($id);
         $order['dispensings'] = self::dispensings($id);
+        $order['balance_supplies'] = self::balanceSupplies($id);
         $order['outside_items'] = $row['prescription_id'] === null ? [] : array_map(static fn (array $i) => [
             'name' => $i['outside_name'], 'quantity' => (int) $i['quantity'],
             'directions' => implode(' · ', array_filter([$i['dose'], $i['frequency'], $i['duration']])),
@@ -289,6 +306,12 @@ final class PharmacyService
                 'amount' => (float) $r['bill_amount'], 'paid_amount' => (float) $r['paid_amount'],
             ],
             'refund' => $r['refund_no'] === null ? null : ['refund_no' => $r['refund_no'], 'status' => $r['refund_status']],
+            // Medicine still to collect on a later day (none once closed or cancelled).
+            'balance_qty' => $r['balance_closed_at'] === null && $r['status'] !== 'cancelled' && $r['status'] !== 'pending_review' ? (int) $r['balance_qty'] : 0,
+            'balance_closed' => $r['balance_closed_at'] === null ? null : [
+                'at' => Format::utc($r['balance_closed_at']), 'by' => $r['balance_closed_by_name'] ?: null,
+                'reason' => Crypto::decrypt($r['balance_close_reason_enc'], 'pharmacy_orders.balance_close_reason'),
+            ],
             'reviewed_at' => Format::utc($r['reviewed_at']),
             'reviewed_by' => $r['reviewed_by_name'] ?: null,
             'completed_at' => Format::utc($r['completed_at']),
@@ -313,6 +336,8 @@ final class PharmacyService
             'duration' => $r['duration'],
             'instructions' => Crypto::decrypt($r['instructions_enc'], 'prescription_items.instructions'),
             'quantity' => (int) $r['quantity'],
+            'prescribed_qty' => (int) $r['prescribed_qty'],
+            'balance' => max(0, (int) $r['prescribed_qty'] - (int) $r['quantity']),
             'dispensed_qty' => (int) $r['dispensed_qty'],
             'remaining' => max(0, (int) $r['quantity'] - (int) $r['dispensed_qty']),
             'unit_price' => (float) $r['unit_price'],
@@ -383,14 +408,14 @@ final class PharmacyService
             foreach ($lines as $line) {
                 $item = $byId[$line['item_id']] ?? throw HttpException::validation(['items' => 'An item is no longer on this order.']);
                 $quantity = max(0, $line['quantity']);
-                if ($quantity === 0) {
-                    Database::execute('DELETE FROM pharmacy_order_items WHERE id = :id', ['id' => (int) $item['id']]);
-                    continue;
-                }
+                // Less than prescribed (or none now) leaves a balance to collect on a later day.
                 Database::execute(
                     'UPDATE pharmacy_order_items SET quantity = :q WHERE id = :id',
                     ['q' => $quantity, 'id' => (int) $item['id']]
                 );
+                if ($quantity === 0) {
+                    continue;
+                }
                 $kept[] = ['item' => $item, 'quantity' => $quantity];
             }
             if ($kept === []) {
@@ -449,6 +474,9 @@ final class PharmacyService
             return;
         }
         $userId = (int) ($bill['updated_by'] ?? $bill['created_by']);
+        if ($outcome === 'cancelled' && self::undoBalanceSupply((int) $bill['id'], $userId)) {
+            return;
+        }
         if ($outcome === 'cancelled') {
             Database::execute(
                 "UPDATE pharmacy_orders SET status = 'cancelled', bill_id = NULL, cancelled_at = UTC_TIMESTAMP(3), cancelled_by = :by,
@@ -585,6 +613,8 @@ final class PharmacyService
                 'UPDATE pharmacy_orders SET status = :s, cancel_reason_enc = :reason, cancelled_at = UTC_TIMESTAMP(3), cancelled_by = :by,
                         completed_at = CASE WHEN :s2 = \'completed\' THEN UTC_TIMESTAMP(3) ELSE completed_at END,
                         refund_id = COALESCE(:refund, refund_id), updated_at = UTC_TIMESTAMP(3), updated_by = :by2,
+                        balance_closed_at = COALESCE(balance_closed_at, UTC_TIMESTAMP(3)), balance_closed_by = COALESCE(balance_closed_by, :by3),
+                        balance_close_reason_enc = COALESCE(balance_close_reason_enc, :reason2),
                         row_version = row_version + 1
                   WHERE id = :id',
                 [
@@ -592,10 +622,146 @@ final class PharmacyService
                     's2' => $anyDispensed ? 'completed' : 'cancelled',
                     'reason' => Crypto::encrypt($reason, 'pharmacy_orders.cancel_reason'),
                     'by' => $ctx->userId, 'by2' => $ctx->userId, 'refund' => $refundId, 'id' => $id,
+                    'by3' => $ctx->userId, 'reason2' => Crypto::encrypt($reason, 'pharmacy_orders.balance_close_reason'),
                 ]
             );
             return self::present(self::find($id));
         });
+    }
+
+    // ─── Balance collected on a later day ───────────────────────────────
+
+    /**
+     * The patient comes back for medicine they could not take before. Up to the balance of each
+     * line, at the price locked at the first visit; a bill of its own for the cashier, then handed
+     * over as usual. Only once everything billed so far has been handed over.
+     *
+     * @param array<int, array{item_id:int, quantity:int}> $lines
+     */
+    public static function supplyBalance(int $id, array $lines, AuthContext $ctx): array
+    {
+        return Database::transaction(function () use ($id, $lines, $ctx): array {
+            $order = self::lock($id);
+            if ($order['source'] !== 'prescription' || $order['balance_closed_at'] !== null || $order['status'] === 'cancelled') {
+                throw HttpException::conflict('no_balance', 'This order has no balance to collect.');
+            }
+            if ($order['status'] !== 'completed') {
+                throw HttpException::conflict('order_state', 'Finish the current part first: it must be paid and handed over before more is billed.');
+            }
+            $items = [];
+            foreach (Database::all('SELECT * FROM pharmacy_order_items WHERE order_id = :o FOR UPDATE', ['o' => $id]) as $item) {
+                $items[(int) $item['id']] = $item;
+            }
+            $taken = [];
+            foreach ($lines as $line) {
+                $item = $items[$line['item_id']] ?? throw HttpException::validation(['items' => 'An item is no longer on this order.']);
+                $quantity = max(0, $line['quantity']);
+                if ($quantity === 0) {
+                    continue;
+                }
+                $balance = max(0, (int) $item['prescribed_qty'] - (int) $item['quantity']);
+                if ($quantity > $balance) {
+                    throw HttpException::validation(["items.{$item['id']}" => "Only $balance left to collect."]);
+                }
+                $taken[] = ['item' => $item, 'quantity' => $quantity];
+            }
+            if ($taken === []) {
+                throw HttpException::validation(['items' => 'Enter at least one quantity to supply now.']);
+            }
+            $total = round(array_sum(array_map(static fn (array $t) => $t['quantity'] * (float) $t['item']['unit_price'], $taken)), 2);
+            $billId = BillingService::createBill(
+                (int) $order['patient_id'], $order['visit_id'] === null ? null : (int) $order['visit_id'], 'pharmacy',
+                "Medicine (balance of {$order['order_no']}) — " . implode(', ', array_map(static fn (array $t) => $t['item']['description'], $taken)),
+                array_map(static fn (array $t) => [
+                    'price_item_id' => null, 'description' => $t['item']['description'],
+                    'quantity' => $t['quantity'], 'unit_price' => (float) $t['item']['unit_price'],
+                ], $taken),
+                false, null, false, $ctx->userId, 'pharmacy_order', $id
+            );
+            $supplyId = Database::insert(
+                'INSERT INTO pharmacy_balance_supplies (order_id, bill_id, previous_bill_id, total_amount, created_at, created_by)
+                 VALUES (:o, :b, :prev, :t, UTC_TIMESTAMP(3), :by)',
+                ['o' => $id, 'b' => $billId, 'prev' => $order['bill_id'], 't' => $total, 'by' => $ctx->userId]
+            );
+            foreach ($taken as $t) {
+                Database::execute('INSERT INTO pharmacy_balance_supply_items (supply_id, item_id, quantity) VALUES (:s, :i, :q)',
+                    ['s' => $supplyId, 'i' => (int) $t['item']['id'], 'q' => $t['quantity']]);
+                Database::execute('UPDATE pharmacy_order_items SET quantity = quantity + :q WHERE id = :id',
+                    ['q' => $t['quantity'], 'id' => (int) $t['item']['id']]);
+            }
+            Database::execute(
+                "UPDATE pharmacy_orders SET status = 'awaiting_payment', bill_id = :b, total_amount = total_amount + :t,
+                        updated_at = UTC_TIMESTAMP(3), updated_by = :by, row_version = row_version + 1 WHERE id = :id",
+                ['b' => $billId, 't' => $total, 'by' => $ctx->userId, 'id' => $id]
+            );
+            self::refreshStatus($id, $ctx->userId);
+            return self::show($id, $ctx);
+        });
+    }
+
+    /** Nothing more will be collected (bought elsewhere, no longer needed); the reason is kept. */
+    public static function closeBalance(int $id, string $reason, AuthContext $ctx): array
+    {
+        return Database::transaction(function () use ($id, $reason, $ctx): array {
+            $order = self::lock($id);
+            $balance = (int) Database::value(
+                'SELECT COALESCE(SUM(GREATEST(CAST(prescribed_qty AS SIGNED) - CAST(quantity AS SIGNED), 0)), 0) FROM pharmacy_order_items WHERE order_id = :o',
+                ['o' => $id]
+            );
+            if ($order['source'] !== 'prescription' || $order['balance_closed_at'] !== null || $order['status'] === 'cancelled' || $balance === 0) {
+                throw HttpException::conflict('no_balance', 'This order has no balance to close.');
+            }
+            Database::execute(
+                'UPDATE pharmacy_orders SET balance_closed_at = UTC_TIMESTAMP(3), balance_closed_by = :by, balance_close_reason_enc = :r,
+                        updated_at = UTC_TIMESTAMP(3), updated_by = :by2, row_version = row_version + 1 WHERE id = :id',
+                ['by' => $ctx->userId, 'by2' => $ctx->userId, 'r' => Crypto::encrypt($reason, 'pharmacy_orders.balance_close_reason'), 'id' => $id]
+            );
+            return self::show($id, $ctx);
+        });
+    }
+
+    /**
+     * The bill of a later part was cancelled at the cashier: that part goes back to the balance
+     * and the order returns to where it was, rather than the whole order being cancelled.
+     */
+    private static function undoBalanceSupply(int $billId, int $userId): bool
+    {
+        $supply = Database::one("SELECT * FROM pharmacy_balance_supplies WHERE bill_id = :b AND status = 'billed' FOR UPDATE", ['b' => $billId]);
+        if ($supply === null) {
+            return false;
+        }
+        foreach (Database::all('SELECT item_id, quantity FROM pharmacy_balance_supply_items WHERE supply_id = :s', ['s' => (int) $supply['id']]) as $line) {
+            Database::execute('UPDATE pharmacy_order_items SET quantity = quantity - :q WHERE id = :id AND quantity >= :q2',
+                ['q' => (int) $line['quantity'], 'q2' => (int) $line['quantity'], 'id' => (int) $line['item_id']]);
+        }
+        Database::execute("UPDATE pharmacy_balance_supplies SET status = 'cancelled' WHERE id = :id", ['id' => (int) $supply['id']]);
+        Database::execute(
+            "UPDATE pharmacy_orders SET status = 'completed', bill_id = :prev, total_amount = total_amount - :t,
+                    updated_at = UTC_TIMESTAMP(3), updated_by = :by, row_version = row_version + 1
+              WHERE id = :id AND bill_id = :b",
+            ['prev' => $supply['previous_bill_id'], 't' => (float) $supply['total_amount'], 'by' => $userId, 'id' => (int) $supply['order_id'], 'b' => $billId]
+        );
+        return true;
+    }
+
+    public static function balanceSupplies(int $orderId): array
+    {
+        $supplies = Database::all(
+            "SELECT s.id, s.status, s.total_amount, s.created_at, b.bill_no, b.status AS bill_status,
+                    TRIM(CONCAT_WS(' ', u.first_name, u.last_name)) AS created_by_name
+               FROM pharmacy_balance_supplies s JOIN bills b ON b.id = s.bill_id JOIN users u ON u.id = s.created_by
+              WHERE s.order_id = :o ORDER BY s.id",
+            ['o' => $orderId]
+        );
+        return array_map(static fn (array $s) => [
+            'status' => $s['status'], 'total_amount' => (float) $s['total_amount'], 'created_at' => Format::utc($s['created_at']),
+            'created_by' => $s['created_by_name'], 'bill_no' => $s['bill_no'], 'bill_status' => $s['bill_status'],
+            'items' => array_map(static fn (array $i) => ['description' => $i['description'], 'quantity' => (int) $i['quantity']], Database::all(
+                'SELECT i.description, si.quantity FROM pharmacy_balance_supply_items si JOIN pharmacy_order_items i ON i.id = si.item_id
+                  WHERE si.supply_id = :s ORDER BY i.id',
+                ['s' => (int) $s['id']]
+            )),
+        ], $supplies);
     }
 
     /** The money for medicine paid for but not handed over, through the usual refund queue. */
@@ -682,11 +848,11 @@ final class PharmacyService
                     throw HttpException::validation(['items' => "{$drug['name']}: only {$stock['quantity']} in stock."]);
                 }
                 Database::execute(
-                    'INSERT INTO pharmacy_order_items (order_id, drug_id, description, quantity, unit_price, catalogue_price)
-                     VALUES (:o, :drug, :desc, :qty, :price, :catalogue)',
+                    'INSERT INTO pharmacy_order_items (order_id, drug_id, description, quantity, prescribed_qty, unit_price, catalogue_price)
+                     VALUES (:o, :drug, :desc, :qty, :qty2, :price, :catalogue)',
                     [
                         'o' => $orderId, 'drug' => (int) $drug['id'], 'desc' => mb_substr($drug['name'], 0, 190),
-                        'qty' => $line['quantity'], 'price' => $line['unit_price'], 'catalogue' => (float) $drug['unit_price'],
+                        'qty' => $line['quantity'], 'qty2' => $line['quantity'], 'price' => $line['unit_price'], 'catalogue' => (float) $drug['unit_price'],
                     ]
                 );
                 $total += $line['quantity'] * $line['unit_price'];

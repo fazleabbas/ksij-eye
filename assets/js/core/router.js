@@ -11,7 +11,7 @@ function showModule(mod, name='') {
    'module-theatre-booking','module-theatre-preop','module-theatre-intraop','module-theatre-postop','module-theatre-history',
    'module-diag-booking','module-diag-report','module-diag-history',
    'module-opt-incoming','module-opt-create','module-opt-active','module-opt-dispensing','module-opt-completed','module-opt-external','module-opt-frames',
-   'module-pharm-orders','module-pharm-dispense','module-pharm-partial','module-pharm-refills','module-pharm-history','module-pharm-inventory',
+   'module-pharm-orders','module-pharm-dispense','module-pharm-partial','module-pharm-balance','module-pharm-refills','module-pharm-history','module-pharm-inventory',
    'module-stores-requisition-form','module-stores-my-requisitions','module-stores-requisition-requests','module-stores-requisition-history',
    'module-stores-stock','module-stores-quotations','module-stores-lpos','module-stores-grns','module-stores-history',
    'module-report-master','module-report-financial','module-report-investigation','module-report-surgery','module-report-terminal',
@@ -178,6 +178,11 @@ function showModule(mod, name='') {
     phOpenPartial();
     document.getElementById('nav-pharm-partial')?.classList.add('active');
     expandParentGroup('nav-pharm-partial');
+  } else if(mod==='pharm-balance') {
+    document.getElementById('module-pharm-balance').classList.remove('hidden');
+    phOpenBalance();
+    document.getElementById('nav-pharm-balance')?.classList.add('active');
+    expandParentGroup('nav-pharm-balance');
   } else if(mod==='pharm-refills') {
     document.getElementById('module-pharm-refills').classList.remove('hidden');
     phOpenRefills();

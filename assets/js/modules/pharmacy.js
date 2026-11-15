@@ -10,11 +10,12 @@ const PH = {
   orders: [],
   dispensing: [],
   partial: [],
+  balance: [],        // prescriptions with medicine still to collect
   refills: [],
   history: [],
   stock: [],
   current: null,      // order open in a modal
-  mode: 'view',       // view | review
+  mode: 'view',       // view | review | balance
   dispenseMode: 'dispense',
   walkIn: [],         // lines on the counter sale
   stockItem: null,
@@ -133,6 +134,7 @@ async function phOpenOrder(id, mode) {
     `${order.customer.name} · ${order.customer.reference}${order.prescribed_by ? ' · prescribed by ' + order.prescribed_by : ''}`;
 
   const review = mode === 'review';
+  const balance = mode === 'balance';
   document.getElementById('ph-order-body').innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       ${uiBadge('pharmacyStatus', order.status)}
@@ -162,7 +164,9 @@ async function phOpenOrder(id, mode) {
         <thead>
           <tr>
             <th>Medicine</th><th>Dose</th><th>How often</th><th>For how long</th>
-            <th>On the shelf</th><th>Price each</th>${review ? '<th>Supply</th><th>Line total</th>' : '<th>Ordered</th><th>Handed over</th>'}
+            <th>On the shelf</th><th>Price each</th>${review ? '<th>Prescribed</th><th>Supply now</th><th>Line total</th>'
+              : balance ? '<th>Taken</th><th>Still to collect</th><th>Supply now</th><th>Line total</th>'
+              : `<th>Billed</th><th>Handed over</th>${order.balance_qty ? '<th>Still to collect</th>' : ''}`}
           </tr>
         </thead>
         <tbody>
@@ -177,19 +181,40 @@ async function phOpenOrder(id, mode) {
             <td>${uiBadge('stockLevel', item.in_stock > 0 ? 'in_stock' : 'out_of_stock', String(item.in_stock))}</td>
             <td class="money">${phMoney(item.unit_price)}</td>
             ${review ? `
-              <td><input type="number" class="form-input ph-qty" data-item="${item.id}" data-price="${item.unit_price}"
+              <td>${item.prescribed_qty}</td>
+              <td><input type="number" class="form-input ph-qty" data-item="${item.id}" data-price="${item.unit_price}" data-prescribed="${item.prescribed_qty}"
                    min="0" max="${Math.max(item.quantity, item.in_stock)}" value="${Math.min(item.quantity, item.in_stock)}"
                    oninput="phReviewTotal()" style="width:80px"></td>
               <td class="money" id="ph-line-${item.id}">${phMoney(Math.min(item.quantity, item.in_stock) * item.unit_price)}</td>`
-            : `<td>${item.quantity}</td><td>${item.dispensed_qty}${item.remaining ? ` <span class="muted-note">(${item.remaining} left)</span>` : ''}</td>`}
+            : balance ? `
+              <td>${item.quantity}</td>
+              <td>${item.balance}</td>
+              <td>${item.balance ? `<input type="number" class="form-input ph-qty" data-item="${item.id}" data-price="${item.unit_price}"
+                   min="0" max="${item.balance}" value="${Math.min(item.balance, item.in_stock)}" oninput="phReviewTotal()" style="width:80px">` : '—'}</td>
+              <td class="money" id="ph-line-${item.id}">${phMoney(Math.min(item.balance, item.in_stock) * item.unit_price)}</td>`
+            : `<td>${item.quantity}</td><td>${item.dispensed_qty}${item.remaining ? ` <span class="muted-note">(${item.remaining} left)</span>` : ''}</td>
+               ${order.balance_qty ? `<td>${item.balance || '—'}</td>` : ''}`}
           </tr>`).join('')}
         </tbody>
       </table>
     </div>
-    ${review ? `<div class="opt-price-box" style="margin-top:12px">
-      <div><div class="pcd-label">Bill to raise</div><div class="muted-note">Set a quantity to zero to leave a medicine off.</div></div>
+    ${review || balance ? `<div class="opt-price-box" style="margin-top:12px">
+      <div><div class="pcd-label">Bill to raise</div><div class="muted-note">${review
+        ? 'If the patient can only take part now, enter less (or 0): the rest is kept as a balance they collect on a later day, at the price shown here.'
+        : 'Only what the patient takes today is billed; anything left stays as the balance.'}</div>
+        ${review ? '<div class="muted-note" id="ph-review-balance"></div>' : ''}</div>
       <div class="opt-price-amount" id="ph-review-total">TZS 0</div>
     </div>` : ''}
+    ${!review && !balance && order.balance_qty ? `<div class="alert alert-info" style="margin-top:12px">
+      <strong>${order.balance_qty} still to collect.</strong> The patient can come back to the pharmacy for the rest (Balance to Collect).</div>` : ''}
+    ${order.balance_closed ? `<div class="cl-note" style="margin-top:10px">Balance closed by ${KSI.esc(order.balance_closed.by || '—')},
+      ${KSI.fmtDateTime(order.balance_closed.at)}: ${KSI.esc(order.balance_closed.reason || '—')}</div>` : ''}
+    ${(order.balance_supplies || []).length ? `
+      <div class="form-label" style="margin-top:14px">Balance collected later</div>
+      ${order.balance_supplies.map(s => `<div class="cl-addendum">
+        <div class="cl-addendum-head">Bill ${KSI.esc(s.bill_no)} · ${s.status === 'cancelled' ? 'Cancelled' : KSI.esc(uiLabel('billStatus', s.bill_status))} · ${phMoney(s.total_amount)} · ${KSI.esc(s.created_by)} · ${KSI.fmtDateTime(s.created_at)}</div>
+        <div>${s.items.map(i => `${KSI.esc(i.description)} ×${i.quantity}`).join(', ')}</div>
+      </div>`).join('')}` : ''}
     ${order.dispensings?.length ? `
       <div class="form-label" style="margin-top:14px">Handed over</div>
       ${order.dispensings.map(d => `<div class="cl-addendum">
@@ -202,12 +227,17 @@ async function phOpenOrder(id, mode) {
   document.getElementById('ph-order-footer').innerHTML = `
     <button class="btn btn-secondary" onclick="closeModal('modal-pharm-order')">Close</button>
     ${review ? `<button class="btn btn-primary" onclick="phConfirmReview(this)">Confirm and raise the bill</button>` : ''}
+    ${balance ? `<button class="btn btn-primary" onclick="phConfirmBalance(this)">Raise the bill for these</button>` : ''}
+    ${!balance && order.balance_qty && order.status === 'completed' && KSI.can('pharmacy.orders.review')
+      ? `<button class="btn btn-primary" onclick="phOpenOrder(${order.id}, 'balance')">Supply balance</button>` : ''}
+    ${order.balance_qty && KSI.can('pharmacy.cancel')
+      ? `<button class="btn btn-secondary" onclick="phCloseBalance(${order.id})">Close balance</button>` : ''}
     ${!review && ['paid', 'partially_dispensed'].includes(order.status) && KSI.can('pharmacy.dispense')
       ? `<button class="btn btn-primary" onclick="phOpenDispense(${order.id}, 'dispense')">Hand over</button>` : ''}
     ${!review && ['awaiting_payment', 'paid', 'partially_dispensed'].includes(order.status) && KSI.can('pharmacy.cancel')
       ? `<button class="btn btn-danger" onclick="phOpenCancel(${order.id})">Cancel what is left</button>` : ''}`;
 
-  if (review) phReviewTotal();
+  if (review || balance) phReviewTotal();
   openModal('modal-pharm-order');
 }
 
@@ -222,6 +252,95 @@ function phReviewTotal() {
   });
   const totalEl = document.getElementById('ph-review-total');
   if (totalEl) totalEl.textContent = phMoney(total);
+  // At review, say what will be left for a later day.
+  const left = document.getElementById('ph-review-balance');
+  if (left) {
+    const lines = [...document.querySelectorAll('#ph-order-body .ph-qty')].map(input => {
+      const rest = Math.max(0, Number(input.dataset.prescribed) - Math.max(0, Number(input.value) || 0));
+      const name = input.closest('tr').querySelector('td div')?.textContent || '';
+      return rest ? `${name} ×${rest}` : '';
+    }).filter(Boolean);
+    left.innerHTML = lines.length ? `<strong>Balance to collect later:</strong> ${KSI.esc(lines.join(', '))}` : '';
+  }
+}
+
+async function phConfirmBalance(button) {
+  const modal = document.getElementById('modal-pharm-order');
+  KSI.clearFieldErrors(modal);
+  await admBusy(button, async () => {
+    try {
+      const { order } = await KSI.post(`pharmacy/orders/${PH.current.id}/balance`, { items: phQuantityLines('#ph-order-body') });
+      closeModal('modal-pharm-order');
+      showToast('Bill raised', `${order.order_no} — bill ${order.bill.bill_no} sent to the cashier.`, 'success');
+      await phRefreshLists();
+    } catch (error) {
+      KSI.reportError(error, modal, 'Could not raise the bill');
+    }
+  });
+}
+
+async function phCloseBalance(id) {
+  const reason = prompt('Why will the rest not be collected? (e.g. bought elsewhere, no longer needed)');
+  if (reason === null) return;
+  if (reason.trim().length < 3) {
+    showToast('Reason needed', 'Say why the balance is being closed.', 'error');
+    return;
+  }
+  try {
+    const { order } = await KSI.post(`pharmacy/orders/${id}/balance/close`, { reason: reason.trim() });
+    closeModal('modal-pharm-order');
+    showToast('Balance closed', `${order.order_no} — nothing more to collect.`, 'success');
+    await phRefreshLists();
+  } catch (error) {
+    KSI.reportError(error, null, 'Could not close the balance');
+  }
+}
+
+// ─── Balance to collect ───────────────────────────────────────────────────
+
+async function phOpenBalance() {
+  await phOptions();
+  await phLoadBalance();
+}
+
+async function phLoadBalance() {
+  if (!document.getElementById('ph-bal-tbody')) return;
+  admTableMessage('ph-bal-tbody', 6, 'Loading orders…');
+  try {
+    const { orders } = await KSI.get('pharmacy/orders', { scope: 'balance', search: document.getElementById('ph-bal-search')?.value || '' }, { trackActivity: false });
+    PH.balance = await phWithItems(orders);
+    phRenderBalance();
+  } catch (error) {
+    admTableMessage('ph-bal-tbody', 6, 'Could not load the orders.');
+  }
+}
+
+function phRenderBalance() {
+  const count = document.getElementById('ph-bal-count');
+  if (count) count.textContent = `${PH.balance.length} order${PH.balance.length === 1 ? '' : 's'}`;
+  if (!PH.balance.length) {
+    admTableMessage('ph-bal-tbody', 6, 'No balances waiting to be collected.');
+    return;
+  }
+  document.getElementById('ph-bal-tbody').innerHTML = PH.balance.map(o => {
+    const owed = (o.items || []).filter(i => i.balance > 0);
+    const taken = (o.items || []).filter(i => i.quantity > 0);
+    const ready = o.status === 'completed';
+    return `<tr>
+      <td><div style="font-weight:600">${KSI.esc(o.order_no)}</div><div class="muted-note">${KSI.esc(o.prescription_no || '')}</div></td>
+      <td>${phCustomerCell(o)}</td>
+      <td>${owed.map(i => `${KSI.esc(i.description)} ×${i.balance}`).join('<br>') || '—'}</td>
+      <td>${taken.map(i => `${KSI.esc(i.description)} ×${i.quantity}`).join('<br>') || '—'}</td>
+      <td>${KSI.fmtDate(o.reviewed_at || o.created_at)}</td>
+      <td>
+        <div class="row-actions">
+          ${ready && KSI.can('pharmacy.orders.review') ? `<button class="action-btn action-edit" onclick="phOpenOrder(${o.id}, 'balance')">Supply balance</button>`
+            : `<span class="muted-note">${KSI.esc(uiLabel('pharmacyStatus', o.status))} — finish the current part first</span>`}
+          <button class="action-btn action-view" onclick="phOpenOrder(${o.id}, 'view')">View</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 function phQuantityLines(root) {
@@ -731,6 +850,7 @@ async function phRefreshLists() {
   if (open('module-pharm-orders')) await phLoadOrders();
   if (open('module-pharm-dispense')) await phLoadDispense();
   if (open('module-pharm-partial')) await phLoadPartial();
+  if (open('module-pharm-balance')) await phLoadBalance();
   if (open('module-pharm-refills')) await phLoadRefills();
   if (open('module-pharm-history')) await phLoadHistory();
   if (open('module-pharm-inventory')) await phLoadStock();

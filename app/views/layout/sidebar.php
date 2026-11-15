@@ -136,6 +136,7 @@
         <div class="nav-child" id="nav-pharm-orders"    onclick="showModule('pharm-orders')">New Medication Orders</div>
         <div class="nav-child" id="nav-pharm-dispense"  onclick="showModule('pharm-dispense')">Dispense Medication</div>
         <div class="nav-child" id="nav-pharm-partial"   onclick="showModule('pharm-partial')">Partial Dispensing</div>
+        <div class="nav-child" id="nav-pharm-balance"   onclick="showModule('pharm-balance')">Balance to Collect</div>
         <div class="nav-child" id="nav-pharm-refills"   onclick="showModule('pharm-refills')">Refills</div>
         <div class="nav-child" id="nav-pharm-history"   onclick="showModule('pharm-history')">Orders History</div>
         <div class="nav-child" id="nav-pharm-inventory" onclick="showModule('pharm-inventory')">Inventory</div>

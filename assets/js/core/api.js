@@ -46,6 +46,7 @@ const KSI = (() => {
     'pharm-orders': ['pharmacy.orders.view'],
     'pharm-dispense': ['pharmacy.dispense'],
     'pharm-partial': ['pharmacy.dispense'],
+    'pharm-balance': ['pharmacy.orders.view'],
     'pharm-refills': ['pharmacy.dispense'],
     'pharm-history': ['pharmacy.history.view'],
     'pharm-inventory': ['pharmacy.inventory.view'],
