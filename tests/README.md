@@ -33,6 +33,7 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `postop-layout-browser.mjs` | Post-Op: case list with filters and last/next review; a case opens with its reviews and New Post-Op Visit on the left, the review on the right, filling the screen |
 | `diagnostic-prescriptions.mjs` | A diagnostic report prescribes medicine: sent with the report, pharmacy review, billed, paid, handed over; only once per report; can be added within the correction window |
 | `diagnostic-prescriptions-browser.mjs` | The Medicines section on the report screen, and what was sent shown after saving |
+| `theatre-worklists-browser.mjs` | Pre-Op lists only patients waiting for clearance and In Theatre only those waiting for their operation; the "Sent" switch shows those already moved on |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

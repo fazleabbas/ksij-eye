@@ -44,6 +44,7 @@ run "theatre errors browser" node theatre-errors-browser.mjs
 run "post-op layout browser" node postop-layout-browser.mjs
 run "diagnostic rx api"   node diagnostic-prescriptions.mjs
 run "diagnostic rx browser" node diagnostic-prescriptions-browser.mjs
+run "theatre worklists"   node theatre-worklists-browser.mjs
 run "all screens"         node smoke-modules.mjs
 
 if [ -n "$FAILED" ]; then printf "\nSuites that failed or crashed:%b\n" "$FAILED"; exit 1; fi

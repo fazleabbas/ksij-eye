@@ -106,6 +106,7 @@ final class TheatreController
             'surgeon_user_id' => (int) $request->query('surgeon_user_id'),
             'surgery_item_id' => (int) $request->query('surgery_item_id'),
             'payment' => (string) $request->query('payment'),
+            'stage' => (string) $request->query('stage'),
             'from' => $this->boundary($request->query('from'), false),
             'to' => $this->boundary($request->query('to'), true),
         ]);

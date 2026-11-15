@@ -105,7 +105,7 @@
         <div class="clinical-grid">
           <div class="card th-queue-panel">
             <div class="card-head">
-              <div class="card-title">Waiting for clearance</div>
+              <div class="card-title" id="th-preop-title">Waiting for clearance</div>
               <span class="table-count" id="th-preop-count">0 cases</span>
             </div>
             <div class="filters-bar filters-bar-stacked">
@@ -113,6 +113,10 @@
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input type="text" class="search-input" id="th-preop-search" placeholder="Search patient…" oninput="uiDebounce(thLoadPreop, 350)()">
               </div>
+              <select class="filter-select" id="th-preop-filter-stage" onchange="thStageChanged('th-preop')" title="Which patients to list">
+                <option value="">Waiting here</option>
+                <option value="sent">Sent to theatre</option>
+              </select>
             </div>
             <div id="th-preop-queue" class="th-queue"></div>
           </div>
@@ -137,7 +141,7 @@
         <div class="clinical-grid">
           <div class="card th-queue-panel">
             <div class="card-head">
-              <div class="card-title">Cleared for theatre</div>
+              <div class="card-title" id="th-op-title">Cleared for theatre</div>
               <span class="table-count" id="th-op-count">0 cases</span>
             </div>
             <div class="filters-bar filters-bar-stacked">
@@ -145,6 +149,10 @@
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input type="text" class="search-input" id="th-op-search" placeholder="Search patient…" oninput="uiDebounce(thLoadOperations, 350)()">
               </div>
+              <select class="filter-select" id="th-op-filter-stage" onchange="thStageChanged('th-op')" title="Which patients to list">
+                <option value="">Waiting here</option>
+                <option value="sent">Sent to post-op</option>
+              </select>
             </div>
             <div id="th-op-queue" class="th-queue"></div>
           </div>

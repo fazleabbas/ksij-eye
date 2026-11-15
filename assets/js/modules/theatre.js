@@ -40,6 +40,7 @@ function thFilters(prefix) {
     surgeon_user_id: value(`${prefix}-filter-surgeon`),
     surgery_item_id: value(`${prefix}-filter-surgery`),
     payment: value(`${prefix}-filter-payment`),
+    stage: value(`${prefix}-filter-stage`),
     from: value(`${prefix}-from`),
     to: value(`${prefix}-to`),
   };
@@ -528,10 +529,26 @@ async function thLoadPreop() {
     TH.preop = bookings;
     thRenderQueue('th-preop-queue', 'th-preop-count', bookings, thSelectPreop, b => uiBadge('theatreStatus', b.status));
     if (TH.current && bookings.some(b => b.id === TH.current.id)) thRenderPreopPanel();
-    else if (!bookings.length) document.getElementById('th-preop-panel').innerHTML = thEmptyPanel('No cases are waiting for clearance.');
+    else if (!bookings.length && !TH.current) document.getElementById('th-preop-panel').innerHTML = thEmptyPanel(
+      thFilters('th-preop').stage === 'sent' ? 'No patient under theatre care has been sent on from pre-op.' : 'No cases are waiting for clearance.');
   } catch (error) {
     queue.innerHTML = '<div class="muted-note" style="padding:20px">Could not load the queue.</div>';
   }
+}
+
+// Pre-op and In Theatre list the patients waiting at that step; the switch shows
+// the ones already sent on (still under theatre care) to look back at their record.
+function thStageChanged(prefix) {
+  const sent = thFilters(prefix).stage === 'sent';
+  const titles = {
+    'th-preop': ['Waiting for clearance', 'Sent to theatre'],
+    'th-op': ['Cleared for theatre', 'Sent to post-op'],
+  }[prefix];
+  document.getElementById(`${prefix}-title`).textContent = titles[sent ? 1 : 0];
+  TH.current = null;
+  const panel = document.getElementById(prefix === 'th-preop' ? 'th-preop-panel' : 'th-op-panel');
+  panel.innerHTML = thEmptyPanel('Choose a patient from the list.');
+  if (prefix === 'th-preop') thLoadPreop(); else thLoadOperations();
 }
 
 function thRenderQueue(queueId, countId, bookings, onSelect, badge) {
@@ -566,7 +583,8 @@ function thRenderPreopPanel() {
   if (!panel) return;
   const b = TH.current;
   const p = b.preop || {};
-  const locked = p.status === 'cleared' && !p.correctable_until;
+  // Once the patient is in theatre the assessment is closed (an addendum can still be added).
+  const locked = (p.status === 'cleared' && !p.correctable_until) || !['booked', 'cleared'].includes(b.status);
   const value = (v) => v ?? '';
   panel.innerHTML = `
     <div class="cl-mode">
@@ -633,7 +651,7 @@ function thRenderPreopPanel() {
       ${p.addenda.map(a => `<div class="cl-addendum"><div class="cl-addendum-head">${KSI.esc(a.reason)} — ${KSI.esc(a.created_by)} · ${KSI.fmtDateTime(a.created_at)}</div><div>${KSI.esc(a.note)}</div></div>`).join('')}</div>` : ''}
 
     <div class="modal-footer" style="padding:16px 0 0">
-      ${locked && KSI.can('theatre.preop.record')
+      ${locked && p.id && KSI.can('theatre.preop.record')
         ? `<button class="btn btn-secondary" onclick="thOpenAddendum('theatre_preop', ${p.id})">Add addendum</button>` : ''}
       ${!locked && KSI.can('theatre.preop.record') ? `
         <button class="btn btn-secondary" onclick="thOpenHold('on_hold')">Put on hold</button>
@@ -727,7 +745,8 @@ async function thLoadOperations() {
     TH.operations = bookings;
     thRenderQueue('th-op-queue', 'th-op-count', bookings, thSelectOperation, b => uiBadge('theatreStatus', b.status));
     if (TH.current && bookings.some(b => b.id === TH.current.id)) thRenderOperationPanel();
-    else if (!bookings.length) document.getElementById('th-op-panel').innerHTML = thEmptyPanel('No cases have been cleared for theatre.');
+    else if (!bookings.length && !TH.current) document.getElementById('th-op-panel').innerHTML = thEmptyPanel(
+      thFilters('th-op').stage === 'sent' ? 'No patient under post-op care came through theatre.' : 'No cases have been cleared for theatre.');
   } catch (error) {
     queue.innerHTML = '<div class="muted-note" style="padding:20px">Could not load the queue.</div>';
   }

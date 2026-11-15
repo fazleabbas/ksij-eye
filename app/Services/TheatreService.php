@@ -60,9 +60,12 @@ final class TheatreService
      */
     public static function listBookings(string $scope, array $filters): array
     {
+        // Pre-op and theatre are worklists: by default only the patients still waiting at that
+        // step; "sent" shows those already moved on and still under theatre care.
+        $sent = ($filters['stage'] ?? '') === 'sent';
         [$in, $params] = match ($scope) {
-            'preop' => Database::in('s', ['booked', 'cleared']),
-            'theatre' => Database::in('s', ['cleared', 'in_theatre']),
+            'preop' => Database::in('s', $sent ? ['cleared', 'in_theatre', 'post_op'] : ['booked']),
+            'theatre' => Database::in('s', $sent ? ['post_op'] : ['cleared', 'in_theatre']),
             'postop' => Database::in('s', ['post_op']),
             'history' => Database::in('s', ['discharged', 'cancelled']),
             default => Database::in('s', self::OPEN_STATUSES),

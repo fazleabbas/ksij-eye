@@ -211,6 +211,10 @@ td .visit-id { white-space: nowrap; }
 /* ─── Theatre (Phase 5) ─────────────────────────────────────────────────── */
 .th-page .stats-row .stat-card { flex: 1 1 130px; }
 .th-queue-panel { display: flex; flex-direction: column; min-width: 0; }
+/* Queue headers: title and count on one line, inside the card's padding. */
+.th-queue-panel > .card-head, .diag-queue-panel > .card-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px 16px 2px;
+}
 .th-queue { overflow-y: auto; max-height: calc(100vh - 300px); }
 /* Post-op: a case list, then one case filling the screen under the page header.
    The visit list and the review form each scroll on their own; the page doesn't. */
