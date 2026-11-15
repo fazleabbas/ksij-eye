@@ -206,7 +206,10 @@ async function phOpenOrder(id, mode) {
       <div class="opt-price-amount" id="ph-review-total">TZS 0</div>
     </div>` : ''}
     ${!review && !balance && order.balance_qty ? `<div class="alert alert-info" style="margin-top:12px">
-      <strong>${order.balance_qty} still to collect.</strong> The patient can come back to the pharmacy for the rest (Balance to Collect).</div>` : ''}
+      <strong>${order.balance_qty} still to collect.</strong> The patient can come back to the pharmacy for the rest (Balance to Collect).
+      ${order.status === 'completed' ? '' : `<div style="margin-top:4px">"Supply balance" becomes available once ${order.bill
+        ? `bill ${KSI.esc(order.bill.bill_no)} is ${order.status === 'awaiting_payment' ? 'paid and the medicine' : 'settled and everything paid for is'}`
+        : 'the current part is'} handed over.</div>`}</div>` : ''}
     ${order.balance_closed ? `<div class="cl-note" style="margin-top:10px">Balance closed by ${KSI.esc(order.balance_closed.by || '—')},
       ${KSI.fmtDateTime(order.balance_closed.at)}: ${KSI.esc(order.balance_closed.reason || '—')}</div>` : ''}
     ${(order.balance_supplies || []).length ? `

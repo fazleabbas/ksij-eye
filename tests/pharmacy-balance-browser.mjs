@@ -42,6 +42,11 @@ equal('the bill is only for what is taken now', await evaluate(`document.getElem
 await shot('pharmacy-review-balance', SHOTS);
 await evaluate(`phConfirmReview(document.querySelector('#ph-order-footer .btn-primary'))`);
 await sleep(1500);
+await evaluate(`phOpenOrder(${orderId}, 'view')`);
+await waitUntil(`document.getElementById('modal-pharm-order').classList.contains('open') && document.getElementById('ph-order-body').textContent.includes('still to collect')`, 10000, 'view unpaid');
+const waitNote = await evaluate(`document.getElementById('ph-order-body').textContent`);
+check('while unpaid, the order says when "Supply balance" becomes available', waitNote.includes('becomes available once bill') && waitNote.includes('is paid'), waitNote.slice(-300));
+await evaluate(`closeModal('modal-pharm-order')`);
 const firstBill = Number(api.sql(`SELECT bill_id FROM pharmacy_orders WHERE id = ${orderId}`));
 await payBill(firstBill);
 const itemId = Number(api.sql(`SELECT id FROM pharmacy_order_items WHERE order_id = ${orderId}`));
