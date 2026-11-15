@@ -326,7 +326,7 @@ function optConfirmLensHtml(set) {
     </div>
     ${edit ? `<div class="cl-note" style="margin-top:6px">Changed from Optometry's choice (${KSI.esc(set.original.map(l => l.name).join(', '))}).
       Reason: ${KSI.esc(edit.reason)} · <a href="#" onclick="event.preventDefault();optUndoLensChange(${set.set_no})">Undo</a></div>` : ''}
-    ${canChange ? `<button type="button" class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="optOpenLensChange('confirm', ${set.set_no})">Change lens</button>` : ''}`;
+    ${canChange ? `<button type="button" class="btn btn-secondary btn-sm opt-lens-btn" style="margin-top:6px" onclick="optOpenLensChange('confirm', ${set.set_no})">Change lens</button>` : ''}`;
 }
 
 function optUndoLensChange(setNo) {
@@ -614,7 +614,7 @@ async function optOpenDetail(id, context) {
     ${editable && KSI.can('optical.cancel.request')
       ? `<button class="btn btn-danger" onclick="optOpenCancel(${order.id})">Request cancellation</button>` : ''}
     ${editable && hasLens && !order.lens_change_blocked
-      ? `<button class="btn btn-secondary" onclick="optOpenLensChange('order', null, ${order.id})">Change lens</button>` : ''}
+      ? `<button class="btn btn-secondary opt-lens-btn" onclick="optOpenLensChange('order', null, ${order.id})">Change lens</button>` : ''}
     ${editable && hasLens ? `<button class="btn btn-primary" onclick="optSaveTracking(this)">Save</button>` : ''}
     ${order.status === 'dispensed' && KSI.can('optical.orders.manage')
       ? `<button class="btn btn-secondary" onclick="optOpenChangeFrame(${order.id})">Change frame</button>` : ''}
