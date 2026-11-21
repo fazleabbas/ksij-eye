@@ -35,7 +35,8 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `diagnostic-prescriptions-browser.mjs` | The Medicines section on the report screen, and what was sent shown after saving |
 | `theatre-worklists-browser.mjs` | Pre-Op lists only patients waiting for clearance and In Theatre only those waiting for their operation; the "Sent" switch shows those already moved on |
 | `diagnostic-payment-browser.mjs` | A diagnostic report needs the test paid (or No charge approved; free tests are exempt): refused before check-in, while unpaid and while No charge waits; on screen the unpaid test explains why |
-| `walkin-approvals.mjs` | A walk-in counter-sale bill (no patient) can be discounted, cancelled and refunded; the refund is found by bill, receipt or EXT number |
+| `walkin-approvals.mjs` | A walk-in counter-sale bill (no patient) can be discounted, cancelled and refunded; the refund is found by bill, receipt or EXT number; a walk-in's approval, attachment, receipt, pharmacy order and external spectacle order all open |
+| `walkin-refund-browser.mjs` | New Refund on screen: "Walk-in counter sale?" finds the paid bill by EXT or receipt number, Change clears it, the request is saved for the walk-in |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,
