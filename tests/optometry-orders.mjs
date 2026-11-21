@@ -1,6 +1,6 @@
 // Optometry books investigations and reads their results (new Optometrist role), records
 // cataract biometry, and Theatre starts a new cataract booking from the latest biometry.
-import { signIn, get, post, put, check, equal, expectError, report, sql, payDiagnostic } from './lib/api.mjs';
+import { signIn, get, pendingBill, post, put, check, equal, expectError, report, sql, payDiagnostic } from './lib/api.mjs';
 
 const admin = await signIn();
 const run = String(Date.now()).slice(-6);
@@ -40,7 +40,7 @@ async function optometryVisit(lastName) {
 async function newVisit(patient) {
   await signIn();
   const visit = (await post('visits', { patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'optometry', room: 'Optometry Room 1', confirm_open_visit: true })).visit;
-  const bill = (await get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no);
+  const bill = await pendingBill(b => b.visit_no === visit.visit_no);
   await post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
   return visit;
 }

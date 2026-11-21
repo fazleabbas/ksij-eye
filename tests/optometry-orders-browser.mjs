@@ -21,7 +21,7 @@ const patient = (await api.post('patients', {
   phone: `25573${run}2`, address: 'Kinondoni, Dar es Salaam', kin_name: 'Mama Rehema', kin_relationship: 'Spouse', kin_phone: `25573${run}3`,
 })).patient;
 const visit = (await api.post('visits', { patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'optometry', room: 'Optometry Room 1' })).visit;
-const bill = (await api.get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no);
+const bill = await api.pendingBill(b => b.visit_no === visit.visit_no);
 await api.post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
 const found = (await api.get('patients?' + new URLSearchParams({ search: patient.reg_no }))).patients.find(p => p.id === patient.id);
 const icd = (await api.get('clinical/options')).icd10[0];

@@ -1,6 +1,6 @@
 // The MTUHA registers: the outpatient register built from a day's visit, and the
 // theatre register built from operations performed. Plus the doctor's referral.
-import { signIn, get, post, check, equal, expectError, report, sql } from './lib/api.mjs';
+import { signIn, get, pendingBill, post, check, equal, expectError, report, sql } from './lib/api.mjs';
 
 const me = await signIn();
 const run = String(Date.now()).slice(-6);
@@ -15,7 +15,7 @@ async function doctorVisit(lastName, phoneTail, dateOfBirth = '1970-06-15') {
   const visit = (await post('visits', {
     patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'doctor_room', room: 'Room 1',
   })).visit;
-  const bill = (await get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no);
+  const bill = await pendingBill(b => b.visit_no === visit.visit_no);
   await post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
   await post(`ophthalmology/visits/${visit.id}/claim`);
   return { patient, visit };

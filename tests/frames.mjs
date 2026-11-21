@@ -1,13 +1,13 @@
 // Optical frames: the frame list and its stock, store → Optical, external sales,
 // frames on patient orders, frames set aside until hand-over, and frame changes.
-import { signIn, get, post, put, check, equal, expectError, report, sql } from './lib/api.mjs';
+import { signIn, get, pendingBill, post, put, check, equal, expectError, report, sql } from './lib/api.mjs';
 
 const me = await signIn();
 const run = String(Date.now()).slice(-6);
 const options = async () => (await get('optical/options'));
 const frameOf = async id => (await get('optical/frames')).frames.find(f => f.id === id);
 const payBill = async billNo => {
-  const bill = (await get('bills?status=pending')).bills.find(b => b.bill_no === billNo);
+  const bill = await pendingBill(b => b.bill_no === billNo);
   await post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
 };
 
@@ -96,7 +96,7 @@ const patient = (await post('patients', {
 const visit = (await post('visits', {
   patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'triage',
 })).visit;
-await payBill((await get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no).bill_no);
+await payBill((await pendingBill(b => b.visit_no === visit.visit_no)).bill_no);
 sql(`UPDATE visits SET status = 'waiting_optometry' WHERE id = ${visit.id}`);
 await post(`optometry/visits/${visit.id}/claim`);
 const icd = (await get('clinical/options')).icd10[0];
@@ -138,7 +138,7 @@ const twin = (await post('patients', {
   kin_name: 'Kaka Said', kin_relationship: 'Sibling', kin_phone: `25575${run}8`,
 })).patient;
 const twinVisit = (await post('visits', { patient_id: twin.id, visit_type: 'consultation', sub_type: 'normal', destination: 'triage' })).visit;
-await payBill((await get('bills?status=pending')).bills.find(b => b.visit_no === twinVisit.visit_no).bill_no);
+await payBill((await pendingBill(b => b.visit_no === twinVisit.visit_no)).bill_no);
 sql(`UPDATE visits SET status = 'waiting_optometry' WHERE id = ${twinVisit.id}`);
 await post(`optometry/visits/${twinVisit.id}/claim`);
 const twoRx = {

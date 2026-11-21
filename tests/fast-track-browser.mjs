@@ -11,7 +11,7 @@ const patient = (await api.post('patients', {
   phone: `25575${run}1`, address: 'Mbezi, Dar es Salaam', kin_name: 'Bw Hamisi', kin_relationship: 'Spouse', kin_phone: `25575${run}2`,
 })).patient;
 const visit = (await api.post('visits', { patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'triage' })).visit;
-const bill = (await api.get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no);
+const bill = await api.pendingBill(b => b.visit_no === visit.visit_no);
 await api.post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
 // As the patient search returns them.
 const found = (await api.get('patients?' + new URLSearchParams({ search: patient.reg_no }))).patients.find(p => p.id === patient.id);

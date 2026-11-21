@@ -94,8 +94,10 @@ const counterSale = await api.post('pharmacy/walk-in-sales', {
   name: `Screen Counter ${Date.now() % 100000}`, phone: '255700099887', items: [{ drug_id: counterDrug.id, quantity: 1, unit_price: 1500 }],
 });
 const counterBillNo = counterSale.order.bill.bill_no;
-const counterBillId = (await api.get('bills?status=pending')).bills.find(b => b.bill_no === counterBillNo).id;
+const counterBillId = (await api.pendingBill(b => b.bill_no === counterBillNo)).id;
 await evaluate(`showModule('cashier-payments')`);
+// The queue is paged, oldest first: search for the bill as the cashier would.
+await evaluate(`(() => { const box = document.getElementById('cs-search'); box.value = '${counterBillNo}'; box.dispatchEvent(new Event('input', { bubbles: true })); })()`);
 await waitUntil(`document.getElementById('cs-tbody').textContent.includes('${counterBillNo}')`, 15000, 'cashier queue');
 await evaluate(`csOpenPayment(${counterBillId})`);
 await waitUntil(`document.getElementById('modal-process-payment').classList.contains('open')`, 8000, 'payment modal');

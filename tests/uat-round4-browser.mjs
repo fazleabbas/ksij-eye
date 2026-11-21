@@ -15,7 +15,7 @@ const patient = (await api.post('patients', {
 const found = (await api.get('patients?' + new URLSearchParams({ search: patient.reg_no }))).patients.find(p => p.id === patient.id);
 // A visit for the doctor, who will refer the patient on to Optometry.
 const visit = (await api.post('visits', { patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'doctor_room', room: 'Room 1' })).visit;
-const bill = (await api.get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no);
+const bill = await api.pendingBill(b => b.visit_no === visit.visit_no);
 await api.post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
 await api.post(`ophthalmology/visits/${visit.id}/claim`);
 

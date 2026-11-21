@@ -48,7 +48,7 @@ check('the order shows as an external customer', await evaluate(`document.getEle
 
 // ─── Change frame on spectacles handed over ───────────────────────────────
 const sale = (await api.get('optical/orders?scope=active&search=' + encodeURIComponent(`Screen Customer ${run}`))).orders[0];
-const bill = (await api.get('bills?status=pending')).bills.find(b => b.bill_no === sale.bill.bill_no);
+const bill = await api.pendingBill(b => b.bill_no === sale.bill.bill_no);
 await api.post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
 await api.post(`optical/orders/${sale.id}/dispense`, {});
 await evaluate(`optOpenDetail(${sale.id}, 'completed')`);
@@ -61,9 +61,10 @@ await shot('change-frame', SHOTS);
 await evaluate(`closeModal('modal-opt-change-frame'); closeModal('modal-opt-detail')`);
 
 // ─── Another pair on a patient's prescription ─────────────────────────────
-// frames.mjs leaves a patient referral order behind; pick the newest one.
+// frames.mjs leaves a patient referral order behind; pick the newest one made from a prescription
+// (another pair repeats the optometrist's lenses, so an order without one never offers it).
 const patientOrder = (await api.get('optical/orders?scope=active')).orders
-  .filter(o => o.order_type === 'referral' && o.customer_type === 'patient').pop();
+  .filter(o => o.order_type === 'referral' && o.customer_type === 'patient' && o.assessment_id).pop();
 check('there is a patient order to work with', !!patientOrder);
 if (patientOrder) {
   await evaluate(`optOpenDetail(${patientOrder.id}, 'active')`);

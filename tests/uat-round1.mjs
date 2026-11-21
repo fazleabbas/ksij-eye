@@ -1,5 +1,5 @@
 // The corrections the clinic asked for after reviewing the system (UAT round 1).
-import { signIn, get, post, put, del, upload, check, equal, expectError, report, sql, payDiagnostic } from './lib/api.mjs';
+import { signIn, get, pendingBill, post, put, del, upload, check, equal, expectError, report, sql, payDiagnostic } from './lib/api.mjs';
 
 const me = await signIn();
 // Re-runnable without a database reset: everything this suite creates carries a run tag.
@@ -48,7 +48,7 @@ const visit = (await post('visits', {
   patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal',
   destination: 'doctor_room', room: 'Room 1',
 })).visit;
-const bill = (await get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no);
+const bill = await pendingBill(b => b.visit_no === visit.visit_no);
 await post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
 
 await post(`ophthalmology/visits/${visit.id}/claim`);

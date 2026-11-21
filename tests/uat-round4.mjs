@@ -1,7 +1,7 @@
 // UAT round 4 (live testing): reception sends patients straight to Optometry, the doctor's
 // Clinical History and referral to Optometry (reopening an earlier optometry record), and the
 // discounts moved into the Financial Summary.
-import { signIn, get, post, put, check, equal, expectError, report, sql } from './lib/api.mjs';
+import { signIn, get, pendingBill, post, put, check, equal, expectError, report, sql } from './lib/api.mjs';
 
 await signIn();
 const run = String(Date.now()).slice(-6);
@@ -16,7 +16,7 @@ async function newPatient(lastName, dob = '2016-05-05') {
   })).patient;
 }
 async function pay(visit) {
-  const bill = (await get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no);
+  const bill = await pendingBill(b => b.visit_no === visit.visit_no);
   await post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
 }
 const status = visitId => sql(`SELECT status FROM visits WHERE id = ${visitId}`);

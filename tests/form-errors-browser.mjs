@@ -5,7 +5,7 @@ const run = String(Date.now()).slice(-6);
 await api.signIn();
 const patient = (await api.post('patients', { first_name: 'White', last_name: `Screen${run}`, gender: 'male', date_of_birth: '1960-01-01', phone: `25576${run}1`, address: 'Ilala', kin_name: 'X Y', kin_relationship: 'Spouse', kin_phone: `25576${run}2` })).patient;
 const visit = (await api.post('visits', { patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'triage' })).visit;
-const bill = (await api.get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no);
+const bill = await api.pendingBill(b => b.visit_no === visit.visit_no);
 await api.post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
 api.sql(`UPDATE visits SET status = 'waiting_optometry' WHERE id = ${visit.id}`);
 await api.post(`optometry/visits/${visit.id}/claim`);

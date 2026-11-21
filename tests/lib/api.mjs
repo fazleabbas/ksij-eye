@@ -39,6 +39,19 @@ export const post = (p, b, o) => call('POST', p, b ?? {}, o);
 export const put = (p, b, o) => call('PUT', p, b ?? {}, o);
 export const del = (p, o) => call('DELETE', p, undefined, o);
 
+/**
+ * The first bill in the cashier's pending queue that matches. The queue is paged and
+ * oldest first, so a new bill is past page one once earlier runs leave bills unpaid:
+ * look through every page rather than only the first.
+ */
+export async function pendingBill(match) {
+  for (let page = 1; ; page++) {
+    const { bills, total, per_page } = await get(`bills?status=pending&per_page=100&page=${page}`);
+    const bill = bills.find(match);
+    if (bill || page * per_page >= total) return bill;
+  }
+}
+
 /** Multipart upload, with the session cookie and CSRF token the API expects. */
 export async function upload(path, formData) {
   const response = await fetch(BASE + 'api/' + path, {

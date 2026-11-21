@@ -15,7 +15,7 @@ const patient = (await api.post('patients', {
   phone: `25571${run}5`, address: 'Upanga, Dar es Salaam', kin_name: 'Mama Rehema', kin_relationship: 'Spouse', kin_phone: `25571${run}6`,
 })).patient;
 const visit = (await api.post('visits', { patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'triage' })).visit;
-const bill = (await api.get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no);
+const bill = await api.pendingBill(b => b.visit_no === visit.visit_no);
 await api.post(`bills/${bill.id}/pay`, { method: 'cash', row_version: bill.row_version });
 api.sql(`UPDATE visits SET status = 'waiting_optometry' WHERE id = ${visit.id}`);
 await api.post(`optometry/visits/${visit.id}/claim`);

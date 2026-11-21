@@ -1,6 +1,6 @@
 // Approving your own request: refused unless you hold "approve own requests"
 // (the Senior Approver role, or Admin), and always marked self-approved.
-import { signIn, get, post, check, equal, expectError, report, sql } from './lib/api.mjs';
+import { signIn, get, pendingBill, post, check, equal, expectError, report, sql } from './lib/api.mjs';
 
 await signIn();
 const run = String(Date.now()).slice(-6);
@@ -34,7 +34,7 @@ async function billFor(lastName, tail) {
   const visit = (await post('visits', {
     patient_id: patient.id, visit_type: 'consultation', sub_type: 'normal', destination: 'doctor_room', room: 'Room 1',
   })).visit;
-  return (await get('bills?status=pending')).bills.find(b => b.visit_no === visit.visit_no);
+  return await pendingBill(b => b.visit_no === visit.visit_no);
 }
 const discountTypes = (await get('reference/lookups?list=discount_type')).values.map(v => v.value);
 
