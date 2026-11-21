@@ -77,6 +77,15 @@ final class BillingService
     }
 
     /** Locks a bill row for the rest of the transaction. */
+    /**
+     * A nullable id column (a bill's patient_id or walkin_id) as an id or null.
+     * Never (int) it directly: null becomes 0, which no row has, and the foreign key fails.
+     */
+    public static function optionalId(mixed $id): ?int
+    {
+        return $id === null ? null : (int) $id;
+    }
+
     public static function lockBill(int $billId): array
     {
         return Database::one('SELECT * FROM bills WHERE id = :id FOR UPDATE', ['id' => $billId])

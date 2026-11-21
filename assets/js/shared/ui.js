@@ -290,7 +290,7 @@ function uiPatientCard(patient, actionHtml = '') {
     </div>
     <div class="patient-card-details">
       <div class="pcd-item"><span class="pcd-label">Gender</span><span class="pcd-value">${KSI.esc(uiLabel('gender', patient.gender))}</span></div>
-      <div class="pcd-item"><span class="pcd-label">Age</span><span class="pcd-value">${patient.age} years</span></div>
+      <div class="pcd-item"><span class="pcd-label">Age</span><span class="pcd-value">${patient.age == null ? '—' : `${patient.age} years`}</span></div>
       <div class="pcd-item"><span class="pcd-label">Phone</span><span class="pcd-value">${KSI.esc(patient.phone || '—')}</span></div>
     </div>
   </div>`;

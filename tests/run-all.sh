@@ -46,6 +46,7 @@ run "diagnostic rx api"   node diagnostic-prescriptions.mjs
 run "diagnostic rx browser" node diagnostic-prescriptions-browser.mjs
 run "theatre worklists"   node theatre-worklists-browser.mjs
 run "diagnostic payment"  node diagnostic-payment-browser.mjs
+run "walk-in approvals"   node walkin-approvals.mjs
 run "all screens"         node smoke-modules.mjs
 
 if [ -n "$FAILED" ]; then printf "\nSuites that failed or crashed:%b\n" "$FAILED"; exit 1; fi

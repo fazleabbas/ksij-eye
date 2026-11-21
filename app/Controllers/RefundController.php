@@ -25,13 +25,15 @@ final class RefundController
             pay.receipt_no,
             a.approval_no, a.decided_at, a.decision_remarks_enc,
             p.id AS patient_id, p.reg_no, p.first_name_enc, p.middle_name_enc, p.last_name_enc, p.gender, p.date_of_birth_enc,
+            w.walkin_no, w.name_enc AS walkin_name_enc, w.gender AS walkin_gender, w.age_years,
             TRIM(CONCAT_WS(' ', ru.first_name, ru.last_name)) AS requested_by_name,
             TRIM(CONCAT_WS(' ', du.first_name, du.last_name)) AS decided_by_name,
             TRIM(CONCAT_WS(' ', ou.first_name, ou.last_name)) AS paid_out_by_name
        FROM refunds r
        JOIN bills b ON b.id = r.bill_id
        JOIN payments pay ON pay.id = r.payment_id
-       JOIN patients p ON p.id = r.patient_id
+       LEFT JOIN patients p ON p.id = r.patient_id
+       LEFT JOIN pharmacy_walkins w ON w.id = r.walkin_id
        JOIN users ru ON ru.id = r.requested_by
        LEFT JOIN approval_requests a ON a.id = r.approval_id
        LEFT JOIN users du ON du.id = a.decided_by
@@ -53,7 +55,12 @@ final class RefundController
             $where[] = "r.requested_at $operator :$key";
             $params[$key] = Format::localDateToUtc($value, $key === 'to');
         }
-        if ($condition = PatientService::searchCondition($request->query('search'))) {
+        $search = trim($request->query('search'));
+        if (preg_match('/^EXT-/i', $search)) {
+            // A walk-in has no patient record to search; their number is on the bill.
+            $where[] = 'w.walkin_no = :walkin_no';
+            $params['walkin_no'] = strtoupper($search);
+        } elseif ($condition = PatientService::searchCondition($search)) {
             [$where[], $searchParams] = $condition;
             $params += $searchParams;
         }
@@ -61,23 +68,49 @@ final class RefundController
         return ['refunds' => array_map([$this, 'present'], $rows)];
     }
 
-    /** Paid bills of a patient that can still be refunded. */
+    /**
+     * Paid bills that can still be refunded: a patient's, or -- for a walk-in
+     * counter sale, which has no patient to pick -- the one bill found by its
+     * bill or receipt number (or all bills of a walk-in number).
+     */
     public function eligible(Request $request): array
     {
         $patientId = (int) $request->query('patient_id', '0');
-        if ($patientId <= 0) {
-            throw HttpException::validation(['patient_id' => 'Choose a patient.']);
+        $number = strtoupper(trim($request->query('number')));
+        $customer = null;
+        if ($patientId > 0) {
+            $where = 'b.patient_id = :p';
+            $params = ['p' => $patientId];
+        } elseif ($number !== '') {
+            $walkin = Database::one(
+                "SELECT w.id, w.walkin_no, w.name_enc, w.gender, w.age_years FROM pharmacy_walkins w
+                  WHERE w.walkin_no = :n
+                     OR w.id = (SELECT b.walkin_id FROM bills b WHERE b.bill_no = :n2)
+                     OR w.id = (SELECT pay.walkin_id FROM payments pay WHERE pay.receipt_no = :n3 LIMIT 1)
+                  LIMIT 1",
+                ['n' => $number, 'n2' => $number, 'n3' => $number]
+            ) ?? throw HttpException::validation(['number' => 'No walk-in bill or receipt with that number.']);
+            $where = 'b.walkin_id = :w';
+            $params = ['w' => (int) $walkin['id']];
+            $customer = [
+                'id' => null, 'reg_no' => (string) $walkin['walkin_no'],
+                'full_name' => (string) Crypto::decrypt($walkin['name_enc'], 'pharmacy_walkins.name'),
+                'gender' => $walkin['gender'], 'age' => $walkin['age_years'] === null ? null : (int) $walkin['age_years'],
+                'is_walk_in' => true,
+            ];
+        } else {
+            throw HttpException::validation(['patient_id' => 'Choose a patient, or enter a walk-in bill or receipt number.']);
         }
         $rows = Database::all(
             "SELECT b.id, b.bill_no, b.bill_type, b.description, b.net_amount, b.paid_amount, b.refunded_amount, b.paid_at, v.visit_no,
                     (SELECT pay.receipt_no FROM payments pay WHERE pay.bill_id = b.id AND pay.voided_at IS NULL ORDER BY pay.id DESC LIMIT 1) AS receipt_no
                FROM bills b LEFT JOIN visits v ON v.id = b.visit_id
-              WHERE b.patient_id = :p AND b.status IN ('paid', 'partially_refunded') AND b.paid_amount > b.refunded_amount
+              WHERE $where AND b.status IN ('paid', 'partially_refunded') AND b.paid_amount > b.refunded_amount
                 AND NOT EXISTS (SELECT 1 FROM refunds r WHERE r.bill_id = b.id AND r.status IN ('requested', 'approved'))
               ORDER BY b.paid_at DESC LIMIT 50",
-            ['p' => $patientId]
+            $params
         );
-        return ['bills' => array_map(static fn (array $b) => [
+        return ['customer' => $customer, 'bills' => array_map(static fn (array $b) => [
             'id' => (int) $b['id'], 'bill_no' => $b['bill_no'], 'bill_type' => $b['bill_type'], 'description' => $b['description'],
             'paid_amount' => (float) $b['paid_amount'], 'refunded_amount' => (float) $b['refunded_amount'],
             'refundable' => round((float) $b['paid_amount'] - (float) $b['refunded_amount'], 2),
@@ -110,12 +143,13 @@ final class RefundController
             $key = Format::localDateKey();
             $refundNo = sprintf('REF-%s-%03d', $key, Sequence::next("refund:$key"));
             $refundId = Database::insert(
-                'INSERT INTO refunds (refund_no, bill_id, payment_id, patient_id, requested_amount, reason_enc, status, requested_at, requested_by)
-                 VALUES (:no, :bill, :payment, :patient, :amount, :reason, :status, UTC_TIMESTAMP(3), :by)',
-                ['no' => $refundNo, 'bill' => (int) $bill['id'], 'payment' => $paymentId, 'patient' => (int) $bill['patient_id'], 'amount' => $v['amount'],
+                'INSERT INTO refunds (refund_no, bill_id, payment_id, patient_id, walkin_id, requested_amount, reason_enc, status, requested_at, requested_by)
+                 VALUES (:no, :bill, :payment, :patient, :walkin, :amount, :reason, :status, UTC_TIMESTAMP(3), :by)',
+                ['no' => $refundNo, 'bill' => (int) $bill['id'], 'payment' => $paymentId, 'patient' => BillingService::optionalId($bill['patient_id']),
+                 'walkin' => BillingService::optionalId($bill['walkin_id'] ?? null), 'amount' => $v['amount'],
                  'reason' => Crypto::encrypt($v['reason'], 'refunds.reason'), 'status' => 'requested', 'by' => $ctx->userId]
             );
-            $approval = ApprovalService::create('refund', (int) $bill['patient_id'], (int) $bill['id'], $refundId, $v['amount'], null, null, null, $ctx->userId);
+            $approval = ApprovalService::create('refund', BillingService::optionalId($bill['patient_id']), (int) $bill['id'], $refundId, $v['amount'], null, null, null, $ctx->userId);
             Database::execute('UPDATE refunds SET approval_id = :a WHERE id = :id', ['a' => $approval['id'], 'id' => $refundId]);
             return ['refund_id' => $refundId, 'refund_no' => $refundNo, 'approval_no' => $approval['approval_no'], 'bill_no' => $bill['bill_no']];
         });
@@ -197,7 +231,14 @@ final class RefundController
                 'id' => (int) $r['bill_id'], 'bill_no' => $r['bill_no'], 'bill_type' => $r['bill_type'], 'description' => $r['description'],
                 'paid_amount' => (float) $r['paid_amount'], 'refunded_amount' => (float) $r['refunded_amount'], 'receipt_no' => $r['receipt_no'],
             ],
-            'patient' => PatientService::brief($r),
+            'patient' => $r['patient_id'] !== null ? PatientService::brief($r) : [
+                'id' => null,
+                'reg_no' => (string) $r['walkin_no'],
+                'full_name' => (string) Crypto::decrypt($r['walkin_name_enc'], 'pharmacy_walkins.name'),
+                'gender' => $r['walkin_gender'],
+                'age' => $r['age_years'] === null ? null : (int) $r['age_years'],
+                'is_walk_in' => true,
+            ],
         ];
     }
 }

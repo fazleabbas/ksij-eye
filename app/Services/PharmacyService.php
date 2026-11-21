@@ -861,16 +861,17 @@ final class PharmacyService
         }
         $key = Format::localDateKey();
         $refundId = Database::insert(
-            'INSERT INTO refunds (refund_no, bill_id, payment_id, patient_id, requested_amount, reason_enc, status, requested_at, requested_by)
-             VALUES (:no, :bill, :payment, :patient, :amount, :reason, :status, UTC_TIMESTAMP(3), :by)',
+            'INSERT INTO refunds (refund_no, bill_id, payment_id, patient_id, walkin_id, requested_amount, reason_enc, status, requested_at, requested_by)
+             VALUES (:no, :bill, :payment, :patient, :walkin, :amount, :reason, :status, UTC_TIMESTAMP(3), :by)',
             [
                 'no' => sprintf('REF-%s-%03d', $key, Sequence::next("refund:$key")),
-                'bill' => (int) $bill['id'], 'payment' => $paymentId, 'patient' => (int) $bill['patient_id'],
+                'bill' => (int) $bill['id'], 'payment' => $paymentId,
+                'patient' => BillingService::optionalId($bill['patient_id']), 'walkin' => BillingService::optionalId($bill['walkin_id'] ?? null),
                 'amount' => $amount, 'reason' => Crypto::encrypt($reason, 'refunds.reason'),
                 'status' => 'requested', 'by' => $ctx->userId,
             ]
         );
-        ApprovalService::create('refund', (int) $bill['patient_id'], (int) $bill['id'], $refundId, $amount, null, null, $reason, $ctx->userId);
+        ApprovalService::create('refund', BillingService::optionalId($bill['patient_id']), (int) $bill['id'], $refundId, $amount, null, null, $reason, $ctx->userId);
         return $refundId;
     }
 

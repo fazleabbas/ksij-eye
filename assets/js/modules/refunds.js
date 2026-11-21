@@ -76,7 +76,24 @@ function rfOpenNew() {
   setTimeout(() => document.getElementById('nr-patient-search').focus(), 50);
 }
 
-async function rfSelectPatient(patient) {
+/** A walk-in has no patient record: find their counter-sale bill by its number instead. */
+async function rfFindByNumber() {
+  const form = document.getElementById('nr-form');
+  KSI.clearFieldErrors(form);
+  const number = document.getElementById('nr-number').value.trim();
+  if (!number) {
+    KSI.showFieldErrors(form, { number: 'Enter the bill, receipt or EXT number.' });
+    return;
+  }
+  try {
+    const result = await KSI.get('refunds/eligible', { number });
+    await rfSelectPatient(result.customer, result.bills);
+  } catch (error) {
+    KSI.reportError(error, form, 'Not found');
+  }
+}
+
+async function rfSelectPatient(patient, preloadedBills = null) {
   REFUND_UI.patient = patient;
   REFUND_UI.bill = null;
   document.getElementById('nr-picker').style.display = patient ? 'none' : '';
@@ -88,12 +105,13 @@ async function rfSelectPatient(patient) {
   document.getElementById('nr-submit').disabled = true;
   if (!patient) {
     REFUND_UI.picker.reset();
+    document.getElementById('nr-number').value = '';
     return;
   }
   const list = document.getElementById('nr-bills');
   list.innerHTML = '<div class="muted-note">Loading paid bills…</div>';
   try {
-    REFUND_UI.bills = (await KSI.get('refunds/eligible', { patient_id: patient.id })).bills;
+    REFUND_UI.bills = preloadedBills ?? (await KSI.get('refunds/eligible', { patient_id: patient.id })).bills;
     list.innerHTML = REFUND_UI.bills.length ? REFUND_UI.bills.map(b => `
       <label class="radio-card">
         <input type="radio" name="nr-bill" value="${b.id}" onchange="rfSelectBill()">
@@ -103,7 +121,7 @@ async function rfSelectPatient(patient) {
         </div>
         <strong class="money">${uiMoney(b.refundable)}</strong>
       </label>`).join('')
-      : '<div class="muted-note">This patient has no paid bills that can be refunded (bills with a refund in progress are not listed).</div>';
+      : (patient.is_walk_in ? '<div class="muted-note">This walk-in has no paid bills that can be refunded (bills with a refund in progress are not listed).</div>' : '<div class="muted-note">This patient has no paid bills that can be refunded (bills with a refund in progress are not listed).</div>');
   } catch (error) {
     list.innerHTML = `<div class="muted-note">${KSI.esc(error.message)}</div>`;
   }

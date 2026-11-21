@@ -184,13 +184,19 @@
       <button class="modal-close" type="button" onclick="closeModal('modal-new-refund')" aria-label="Close">&times;</button>
     </div>
     <form class="modal-body" id="nr-form" novalidate onsubmit="event.preventDefault()">
-      <div class="form-section-title" style="margin-top:0">1 · Patient</div>
+      <div class="form-section-title" style="margin-top:0">1 · Patient or Walk-in</div>
       <div class="form-group" id="nr-picker" data-field="patient_id">
         <div class="search-wrap" style="max-width:100%">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" class="search-input" id="nr-patient-search" placeholder="Name, phone or file number…" autocomplete="off" maxlength="80" style="max-width:100%">
         </div>
         <div id="nr-results" style="display:none;margin-top:6px"></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px" data-field="number">
+          <span class="form-hint" style="white-space:nowrap">Walk-in counter sale?</span>
+          <input class="form-input" type="text" id="nr-number" placeholder="Bill, receipt or EXT number" maxlength="40" autocomplete="off"
+                 onkeydown="if (event.key === 'Enter') { event.preventDefault(); rfFindByNumber(); }">
+          <button class="btn btn-ghost btn-sm" type="button" onclick="rfFindByNumber()">Find</button>
+        </div>
       </div>
       <div id="nr-selected" style="display:none"></div>
 

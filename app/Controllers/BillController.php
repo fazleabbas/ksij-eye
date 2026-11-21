@@ -210,7 +210,7 @@ final class BillController
             if ($v['amount'] > (float) $bill['net_amount']) {
                 throw HttpException::validation(['amount' => 'The discount cannot be more than the amount due.']);
             }
-            $approval = ApprovalService::create('discount', (int) $bill['patient_id'], (int) $bill['id'], null, $v['amount'], $v['discount_type'], $v['sponsor'], $v['remarks'], $ctx->userId);
+            $approval = ApprovalService::create('discount', BillingService::optionalId($bill['patient_id']), (int) $bill['id'], null, $v['amount'], $v['discount_type'], $v['sponsor'], $v['remarks'], $ctx->userId);
             $this->setStatus((int) $bill['id'], 'discount_requested', $ctx->userId);
             return ['approval' => $approval, 'bill_no' => $bill['bill_no']];
         });
@@ -224,7 +224,7 @@ final class BillController
         $v = Validator::make($request->all())->string('reason', true, 500, 5)->int('row_version', true, 1)->validate();
         $result = Database::transaction(function () use ($params, $v, $ctx): array {
             $bill = $this->lockPending($params['id'], $v['row_version']);
-            $approval = ApprovalService::create('bill_cancellation', (int) $bill['patient_id'], (int) $bill['id'], null, (float) $bill['net_amount'], null, null, $v['reason'], $ctx->userId);
+            $approval = ApprovalService::create('bill_cancellation', BillingService::optionalId($bill['patient_id']), (int) $bill['id'], null, (float) $bill['net_amount'], null, null, $v['reason'], $ctx->userId);
             $this->setStatus((int) $bill['id'], 'cancellation_requested', $ctx->userId);
             return ['approval' => $approval, 'bill_no' => $bill['bill_no']];
         });
