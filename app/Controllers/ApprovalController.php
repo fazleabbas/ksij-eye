@@ -123,7 +123,48 @@ final class ApprovalController
         return ['approval' => $approval + ['files' => array_map(static fn (array $f) => [
             'id' => (int) $f['id'], 'name' => FileStore::decryptName($f['original_name_enc']), 'mime_type' => $f['mime_type'],
             'size_bytes' => (int) $f['size_bytes'], 'uploaded_at' => Format::utc($f['uploaded_at']),
-        ], $files)]];
+        ], $files)] + [
+            // Documents from the patient's other discount requests, so the approver need not ask for them again.
+            'patient_files' => $approval['type'] === 'discount' && $approval['patient']
+                ? ApprovalService::patientDocuments($approval['patient']['id'], $approval['id'])
+                : [],
+        ]];
+    }
+
+    /** Documents already on file from this patient's discount requests, shown wherever a new discount is asked for. */
+    public function patientDocuments(Request $request, array $params): array
+    {
+        $this->assertDiscountDocumentAccess();
+        $patientId = (int) $params['id'];
+        if (!Database::value('SELECT 1 FROM patients WHERE id = :id', ['id' => $patientId])) {
+            throw HttpException::notFound('Patient not found.');
+        }
+        $files = ApprovalService::patientDocuments($patientId);
+        if ($files) {
+            Audit::access($patientId, 'approvals', 'view', 'discount_documents', $patientId);
+        }
+        return ['files' => $files];
+    }
+
+    public function downloadPatientDocument(Request $request, array $params): never
+    {
+        $this->assertDiscountDocumentAccess();
+        $row = Database::one(
+            "SELECT af.file_id FROM approval_files af JOIN approval_requests a ON a.id = af.approval_id
+              WHERE a.patient_id = :p AND a.type = 'discount' AND af.file_id = :f",
+            ['p' => $params['id'], 'f' => $params['fileId']]
+        ) ?? throw HttpException::notFound('File not found.');
+        $file = FileStore::read((int) $row['file_id']);
+        Audit::access((int) $params['id'], 'approvals', 'download', 'approval_file', (int) $row['file_id']);
+        Response::file($file['content'], $file['mime_type'], $file['name']);
+    }
+
+    private function assertDiscountDocumentAccess(): void
+    {
+        $ctx = Auth::require();
+        if (!ApprovalService::canRequestDiscount($ctx) && !$ctx->can('approvals.view')) {
+            throw new HttpException(403, 'forbidden', 'You are not allowed to see discount documents.');
+        }
     }
 
     public function approve(Request $request, array $params): array
@@ -158,8 +199,11 @@ final class ApprovalController
     public function uploadFile(Request $request, array $params): array
     {
         $ctx = Auth::require();
-        $approval = Database::one('SELECT id, approval_no, status, requested_by FROM approval_requests WHERE id = :id', ['id' => $params['id']])
+        $approval = Database::one('SELECT id, approval_no, type, status, requested_by FROM approval_requests WHERE id = :id', ['id' => $params['id']])
             ?? throw HttpException::notFound('Approval request not found.');
+        if ($approval['type'] !== 'discount' || !ApprovalService::canRequestDiscount($ctx)) {
+            throw new HttpException(403, 'forbidden', 'Documents can only be attached to a discount request.');
+        }
         if ((int) $approval['requested_by'] !== $ctx->userId || $approval['status'] !== 'pending') {
             throw new HttpException(403, 'forbidden', 'Documents can only be added by the requester while the request is pending.');
         }

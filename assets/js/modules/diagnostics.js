@@ -373,6 +373,7 @@ async function diagOpenCheckIn(id) {
   document.getElementById('diag-checkin-amount').textContent = `TZS ${KSI.fmtMoney(booking.procedure.unit_price)}`;
   admFillSelect('diag-checkin-reason', 'Select a reason', DIAG.options.no_charge_reasons.map(r => [r.label, r.label]));
   document.getElementById('diag-checkin-remarks').value = '';
+  uiDocsMount('diag-checkin-doc', 'diag-checkin-docs', booking.patient?.id);
   uiSetRadio('diag-checkin-mode', 'bill');
   diagCheckInModeChanged();
   openModal('modal-diag-checkin');
@@ -395,15 +396,17 @@ async function diagSubmitCheckIn(button) {
   }
   await admBusy(button, async () => {
     try {
-      await KSI.post(`diagnostics/bookings/${DIAG.checkInTarget.id}/check-in`, {
+      const { booking } = await KSI.post(`diagnostics/bookings/${DIAG.checkInTarget.id}/check-in`, {
         no_charge: noCharge,
         no_charge_reason: noCharge ? reason : '',
         remarks: document.getElementById('diag-checkin-remarks').value,
       });
+      const failed = booking.no_charge_approval_id ? await uiDocsUpload('diag-checkin-doc', booking.no_charge_approval_id) : 0;
       closeModal('modal-diag-checkin');
-      showToast('Checked in', noCharge
+      showToast('Checked in', (noCharge
         ? 'The test can go ahead. The no-charge request is waiting for an administrator.'
-        : 'The bill has been raised and is waiting at the cashier.', 'success');
+        : 'The bill has been raised and is waiting at the cashier.')
+        + (failed ? ` ${failed} document(s) could not be attached.` : ''), failed ? 'error' : 'success');
       await diagLoadBookings();
     } catch (error) {
       KSI.reportError(error, modal, 'Could not check the patient in');

@@ -180,6 +180,19 @@ async function apOpen(id) {
         <button class="btn btn-secondary btn-sm" type="button" onclick="apDownloadFile(${a.id}, ${f.id})">Download</button>
       </div>
     </div>`).join('');
+  const earlier = a.patient_files || [];
+  document.getElementById('va-patient-files-panel').style.display = earlier.length ? '' : 'none';
+  document.getElementById('va-patient-files').innerHTML = earlier.map(f => `
+    <div class="file-item">
+      <div class="file-info">
+        <div class="file-name">${KSI.esc(f.name)}</div>
+        <div class="file-meta">${KSI.esc(f.approval_no)} (${KSI.esc(uiLabel('approvalStatus', f.approval_status))})${f.discount_type ? ` · ${KSI.esc(f.discount_type)}` : ''}${f.sponsor ? ` · ${KSI.esc(f.sponsor)}` : ''} · ${KSI.fmtDateTime(f.uploaded_at)} · ${uiFileSize(f.size_bytes)}</div>
+      </div>
+      <div class="file-actions">
+        <button class="btn btn-secondary btn-sm" type="button" onclick="apViewFile(${f.approval_id}, ${f.id})">View</button>
+        <button class="btn btn-secondary btn-sm" type="button" onclick="apDownloadFile(${f.approval_id}, ${f.id})">Download</button>
+      </div>
+    </div>`).join('');
   const canDecide = a.status === 'pending' && KSI.can('approvals.decide') && apMayDecide(a);
   document.getElementById('va-actions').innerHTML = canDecide
     ? `<button class="btn btn-danger" type="button" onclick="apOpenReject(${a.id})">Reject</button>

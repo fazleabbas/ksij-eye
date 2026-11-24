@@ -300,3 +300,92 @@ function uiFileSize(bytes) {
   if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
   return Math.max(1, Math.round(bytes / 1024)) + ' KB';
 }
+
+// ── Discount supporting documents ──
+// Used by every screen that asks for a discount (cashier, optical, diagnostics "no charge").
+// Shows what is already on file from the patient's earlier discount requests — the approver sees
+// those with the new request too, so nothing has to be uploaded twice — and collects new files,
+// which are attached once the request exists (uiDocsUpload).
+const UI_DOC_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'docx'];
+const UI_DOCS = {};
+
+function uiDocsMount(key, containerId, patientId) {
+  UI_DOCS[key] = { patientId: patientId || null, files: [] };
+  document.getElementById(containerId).innerHTML = `
+    <label class="form-label">Supporting Documents <span class="text-xs text-muted">(optional · PDF, JPG, PNG, DOCX · up to 5 files, 10 MB each)</span></label>
+    <div id="${key}-onfile"></div>
+    <div class="doc-upload-area" onclick="document.getElementById('${key}-input').click()">
+      <span class="doc-upload-hint" id="${key}-hint">Click to attach a sponsor letter, insurance authorisation…</span>
+    </div>
+    <input type="file" id="${key}-input" multiple accept=".pdf,.jpg,.jpeg,.png,.docx" style="display:none" onchange="uiDocsAdd('${key}', this)">
+    <div class="doc-file-list" id="${key}-list"></div>`;
+  if (!patientId) return;
+  KSI.get(`patients/${patientId}/discount-documents`).then(({ files }) => {
+    if (UI_DOCS[key]?.patientId !== patientId || !files.length) return;
+    document.getElementById(`${key}-hint`).textContent = 'Attach a new document only if it is not already on file above';
+    document.getElementById(`${key}-onfile`).innerHTML = `
+      <div class="alert alert-info" style="margin-bottom:8px"><div>
+        <strong>${files.length} document${files.length === 1 ? '' : 's'} already on file for this patient.</strong>
+        The approver sees ${files.length === 1 ? 'it' : 'them'} with this request; there is no need to upload ${files.length === 1 ? 'it' : 'them'} again.
+      </div></div>
+      ${files.map(f => `
+        <div class="file-item" style="margin-bottom:6px;padding:8px 10px">
+          <div class="file-info">
+            <div class="file-name">${KSI.esc(f.name)}</div>
+            <div class="file-meta">${KSI.esc(f.approval_no)}${f.discount_type ? ` · ${KSI.esc(f.discount_type)}` : ''}${f.sponsor ? ` · ${KSI.esc(f.sponsor)}` : ''} · ${KSI.fmtDateTime(f.uploaded_at)} · ${uiFileSize(f.size_bytes)}</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="uiDocsView(${patientId}, ${f.id})">View</button>
+        </div>`).join('')}`;
+  }).catch(() => { /* the list is a convenience; the request can still be sent without it */ });
+}
+
+function uiDocsView(patientId, fileId) {
+  KSI.openFile(`patients/${patientId}/discount-documents/${fileId}`).catch(error => showToast('Cannot open document', error.message, 'error'));
+}
+
+function uiDocsAdd(key, input) {
+  const state = UI_DOCS[key];
+  for (const file of input.files) {
+    const extension = file.name.split('.').pop().toLowerCase();
+    if (!UI_DOC_EXTENSIONS.includes(extension)) {
+      showToast('File not accepted', `${file.name}: use PDF, JPG, PNG or DOCX.`, 'error');
+    } else if (file.size > 10 * 1048576) {
+      showToast('File too large', `${file.name} is over 10 MB.`, 'error');
+    } else if (state.files.length >= 5) {
+      showToast('Too many files', 'Attach at most 5 documents.', 'error');
+      break;
+    } else if (!state.files.some(f => f.name === file.name && f.size === file.size)) {
+      state.files.push(file);
+    }
+  }
+  input.value = '';
+  uiDocsRender(key);
+}
+
+function uiDocsRemove(key, index) {
+  UI_DOCS[key].files.splice(index, 1);
+  uiDocsRender(key);
+}
+
+function uiDocsRender(key) {
+  document.getElementById(`${key}-list`).innerHTML = UI_DOCS[key].files.map((file, index) => `
+    <div class="file-item" style="margin-top:6px;padding:8px 10px">
+      <div class="file-info"><div class="file-name">${KSI.esc(file.name)}</div><div class="file-meta">${uiFileSize(file.size)}</div></div>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="uiDocsRemove('${key}', ${index})">Remove</button>
+    </div>`).join('');
+}
+
+/** Attaches the new files to the request just created. Returns how many could not be attached. */
+async function uiDocsUpload(key, approvalId) {
+  let failed = 0;
+  for (const file of UI_DOCS[key]?.files || []) {
+    const data = new FormData();
+    data.append('file', file, file.name);
+    try {
+      await KSI.upload(`approvals/${approvalId}/files`, data);
+    } catch {
+      failed++;
+    }
+  }
+  return failed;
+}

@@ -6,6 +6,7 @@ namespace App\Services;
 use App\Core\AuthContext;
 use App\Core\Crypto;
 use App\Core\Database;
+use App\Core\FileStore;
 use App\Core\Format;
 use App\Core\Http\HttpException;
 use App\Core\Sequence;
@@ -53,6 +54,50 @@ final class ApprovalService
             ]
         );
         return ['id' => $id, 'approval_no' => $number];
+    }
+
+    /** Permissions that let a user raise a discount (cashier, optical, diagnostics "no charge"). */
+    public const DISCOUNT_REQUEST_PERMISSIONS = ['payments.discount.request', 'optical.discount.request', 'diagnostics.nocharge.request'];
+
+    public static function canRequestDiscount(AuthContext $ctx): bool
+    {
+        foreach (self::DISCOUNT_REQUEST_PERMISSIONS as $permission) {
+            if ($ctx->can($permission)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Supporting documents already attached to any discount request for this patient, newest first,
+     * so a sponsor letter uploaded once is seen wherever the next discount is asked for.
+     */
+    public static function patientDocuments(int $patientId, ?int $exceptApprovalId = null): array
+    {
+        $rows = Database::all(
+            "SELECT sf.id, sf.original_name_enc, sf.mime_type, sf.size_bytes, sf.uploaded_at,
+                    a.id AS approval_id, a.approval_no, a.status, a.discount_type, a.sponsor
+               FROM approval_requests a
+               JOIN approval_files af ON af.approval_id = a.id
+               JOIN stored_files sf ON sf.id = af.file_id
+              WHERE a.patient_id = :p AND a.type = 'discount' AND a.id <> :except
+              ORDER BY sf.uploaded_at DESC, sf.id DESC
+              LIMIT 50",
+            ['p' => $patientId, 'except' => $exceptApprovalId ?? 0]
+        );
+        return array_map(static fn (array $f) => [
+            'id' => (int) $f['id'],
+            'name' => FileStore::decryptName($f['original_name_enc']),
+            'mime_type' => $f['mime_type'],
+            'size_bytes' => (int) $f['size_bytes'],
+            'uploaded_at' => Format::utc($f['uploaded_at']),
+            'approval_id' => (int) $f['approval_id'],
+            'approval_no' => $f['approval_no'],
+            'approval_status' => $f['status'],
+            'discount_type' => $f['discount_type'],
+            'sponsor' => $f['sponsor'],
+        ], $rows);
     }
 
     public static function approve(int $id, ?float $approvedAmount, ?string $remarks, int $rowVersion, AuthContext $ctx): array

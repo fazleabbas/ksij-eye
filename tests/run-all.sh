@@ -48,6 +48,8 @@ run "theatre worklists"   node theatre-worklists-browser.mjs
 run "diagnostic payment"  node diagnostic-payment-browser.mjs
 run "walk-in approvals"   node walkin-approvals.mjs
 run "walk-in refund browser" node walkin-refund-browser.mjs
+run "discount documents api" node discount-documents.mjs
+run "discount documents browser" node discount-documents-browser.mjs
 run "all screens"         node smoke-modules.mjs
 
 if [ -n "$FAILED" ]; then printf "\nSuites that failed or crashed:%b\n" "$FAILED"; exit 1; fi

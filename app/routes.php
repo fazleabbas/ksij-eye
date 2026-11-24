@@ -116,8 +116,12 @@ return static function (Router $r): void {
     $r->add('GET',  '/approvals/{id}',                   [ApprovalController::class, 'show'],         'approvals.view');
     $r->add('POST', '/approvals/{id}/approve',           [ApprovalController::class, 'approve'],      'approvals.decide');
     $r->add('POST', '/approvals/{id}/reject',            [ApprovalController::class, 'reject'],       'approvals.decide');
-    $r->add('POST', '/approvals/{id}/files',             [ApprovalController::class, 'uploadFile'],   'payments.discount.request');
+    // Any discount requester (cashier, optical, diagnostics): the controller checks the permissions and that it is their own pending request.
+    $r->add('POST', '/approvals/{id}/files',             [ApprovalController::class, 'uploadFile'],   Router::AUTH);
     $r->add('GET',  '/approvals/{id}/files/{fileId}',    [ApprovalController::class, 'downloadFile'], 'approvals.view');
+    // Documents from a patient's earlier discount requests, for discount requesters and approvers (checked in the controller).
+    $r->add('GET',  '/patients/{id}/discount-documents',          [ApprovalController::class, 'patientDocuments'],        Router::AUTH);
+    $r->add('GET',  '/patients/{id}/discount-documents/{fileId}', [ApprovalController::class, 'downloadPatientDocument'], Router::AUTH);
 
     // Clinical — shared
     $r->add('GET', '/clinical/options',               [ClinicalController::class, 'options'], Router::AUTH);

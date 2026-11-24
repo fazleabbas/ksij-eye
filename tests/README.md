@@ -37,6 +37,8 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `diagnostic-payment-browser.mjs` | A diagnostic report needs the test paid (or No charge approved; free tests are exempt): refused before check-in, while unpaid and while No charge waits; on screen the unpaid test explains why |
 | `walkin-approvals.mjs` | A walk-in counter-sale bill (no patient) can be discounted, cancelled and refunded; the refund is found by bill, receipt or EXT number; a walk-in's approval, attachment, receipt, pharmacy order and external spectacle order all open |
 | `walkin-refund-browser.mjs` | New Refund on screen: "Walk-in counter sale?" finds the paid bill by EXT or receipt number, Change clears it, the request is saved for the walk-in |
+| `discount-documents.mjs` | A document attached to one discount request is on file for the patient: listed for the next request (cashier, optical, diagnostics "no charge") and shown to the approver with it; scoped to that patient; refused to users who neither request nor approve discounts |
+| `discount-documents-browser.mjs` | The same on screen: the on-file list in the optical, diagnostics and cashier discount windows, and "Already on File" in the approver's view |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

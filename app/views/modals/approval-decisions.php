@@ -23,6 +23,11 @@
         <div class="payment-panel-title">Supporting Documents</div>
         <div class="file-list" id="va-files"></div>
       </div>
+      <div class="payment-panel" style="margin-top:14px" id="va-patient-files-panel">
+        <div class="payment-panel-title">Already on File for This Patient</div>
+        <div class="text-xs text-muted" style="margin-bottom:8px">Documents attached to this patient's earlier discount requests.</div>
+        <div class="file-list" id="va-patient-files"></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" type="button" onclick="closeModal('modal-view-approval')">Close</button>

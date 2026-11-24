@@ -279,10 +279,8 @@ final class DiagnosticService
                   WHERE id = :id",
                 ['bill' => $billId, 'by' => $ctx->userId, 'by2' => $ctx->userId, 'id' => $id]
             );
-            if ($noChargeReason !== null) {
-                self::requestNoCharge($billId, $noChargeReason, $remarks, $ctx);
-            }
-            return self::present(self::find($id));
+            $approvalId = $noChargeReason === null ? null : self::requestNoCharge($billId, $noChargeReason, $remarks, $ctx);
+            return self::present(self::find($id)) + ['no_charge_approval_id' => $approvalId];
         });
     }
 
@@ -307,8 +305,8 @@ final class DiagnosticService
         );
     }
 
-    /** "No charge": a full discount request an administrator decides on. */
-    private static function requestNoCharge(int $billId, string $reason, ?string $remarks, AuthContext $ctx): void
+    /** "No charge": a full discount request an administrator decides on. Returns its id, or null when nothing is due. */
+    private static function requestNoCharge(int $billId, string $reason, ?string $remarks, AuthContext $ctx): ?int
     {
         if (!$ctx->can('diagnostics.nocharge.request')) {
             throw new HttpException(403, 'forbidden', 'You are not allowed to request a test without charge.');
@@ -316,14 +314,15 @@ final class DiagnosticService
         $bill = BillingService::lockBill($billId);
         $due = (float) $bill['net_amount'] - (float) $bill['paid_amount'];
         if ($due <= 0) {
-            return;
+            return null;
         }
-        ApprovalService::create('discount', (int) $bill['patient_id'], $billId, null, $due, $reason, null, $remarks, $ctx->userId);
+        $approval = ApprovalService::create('discount', (int) $bill['patient_id'], $billId, null, $due, $reason, null, $remarks, $ctx->userId);
         Database::execute(
             "UPDATE bills SET status = 'discount_requested', updated_at = UTC_TIMESTAMP(3), updated_by = :by, row_version = row_version + 1
               WHERE id = :id",
             ['by' => $ctx->userId, 'id' => $billId]
         );
+        return (int) $approval['id'];
     }
 
     /** Keeps a booking in step with its bill: a cancelled bill leaves the test to be charged again. */

@@ -882,7 +882,7 @@ final class OpticalService
                   WHERE id = :id",
                 ['by' => $ctx->userId, 'id' => (int) $bill['id']]
             );
-            return self::present(self::find($id)) + ['approval_no' => $approval['approval_no']];
+            return self::present(self::find($id)) + ['approval_no' => $approval['approval_no'], 'approval_id' => $approval['id']];
         });
     }
 

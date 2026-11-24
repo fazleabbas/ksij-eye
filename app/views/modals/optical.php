@@ -84,6 +84,7 @@
         <label class="form-label" for="opt-discount-remarks">Reason <span class="required">*</span></label>
         <textarea class="form-input" rows="3" id="opt-discount-remarks" maxlength="500" placeholder="Why the discount is being asked for"></textarea>
       </div>
+      <div class="form-group" id="opt-discount-docs"></div>
     </form>
     <div class="modal-footer">
       <button class="btn btn-secondary" type="button" onclick="closeModal('modal-opt-discount')">Cancel</button>

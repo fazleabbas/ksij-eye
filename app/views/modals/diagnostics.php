@@ -98,6 +98,7 @@
           <select class="form-select" id="diag-checkin-reason"></select>
         </div>
         <div class="alert alert-warning">The test still goes ahead. The request waits in Approvals, and if it is refused the bill stands at the list price.</div>
+        <div class="form-group" id="diag-checkin-docs"></div>
       </div>
 
       <div class="form-group" data-field="remarks">

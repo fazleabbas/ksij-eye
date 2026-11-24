@@ -78,14 +78,7 @@
           <label class="form-label" for="dr-remarks">Remarks</label>
           <textarea class="form-input" id="dr-remarks" data-field="remarks" rows="2" maxlength="500" placeholder="Why the discount is needed"></textarea>
         </div>
-        <div class="form-group col-2">
-          <label class="form-label">Supporting Documents <span class="text-xs text-muted">(optional · PDF, JPG, PNG, DOCX · up to 5 files, 10 MB each)</span></label>
-          <div class="doc-upload-area" onclick="document.getElementById('dr-files').click()">
-            <span class="doc-upload-hint">Click to attach a sponsor letter, insurance authorisation…</span>
-          </div>
-          <input type="file" id="dr-files" multiple accept=".pdf,.jpg,.jpeg,.png,.docx" style="display:none" onchange="csOnDiscountFiles(this)">
-          <div class="doc-file-list" id="dr-file-list"></div>
-        </div>
+        <div class="form-group col-2" id="dr-docs"></div>
       </div>
       <div class="discount-calc-box" style="margin-top:14px">
         <div class="dcb-row"><span class="dcb-label">Amount Due</span><span id="dr-orig">TZS 0</span></div>

@@ -3,12 +3,11 @@
 // The payment queue, full payments, discount / cancellation requests (decided
 // in Approvals), receipts and payment history. Amounts come from the server.
 
-const CASH_UI = { queuePage: 1, historyPage: 1, perPage: 25, historyTab: 'paid', bill: null, receipt: null, discountTypes: null, discountFiles: [] };
+const CASH_UI = { queuePage: 1, historyPage: 1, perPage: 25, historyTab: 'paid', bill: null, receipt: null, discountTypes: null };
 const CASH_QUEUE_CARDS = [
   ['', 'All Waiting', 'var(--amber)'], ['consultation', 'Consultation', 'var(--blue)'], ['investigation', 'Investigation', 'var(--teal)'],
   ['optical', 'Optical', 'var(--purple)'], ['surgery', 'Surgery', 'var(--red)'], ['pharmacy', 'Pharmacy', 'var(--green)'],
 ];
-const CASH_DOC_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'docx'];
 
 // ════════════════════════════════════════════════════════════════════════
 // Payment queue
@@ -355,8 +354,7 @@ async function csOpenDiscount() {
     + CASH_UI.discountTypes.map(t => `<option value="${KSI.esc(t.value)}">${KSI.esc(t.label)}</option>`).join('');
   document.getElementById('dr-details').innerHTML = csBillFields(bill);
   document.getElementById('dr-amount').max = bill.net_amount;
-  CASH_UI.discountFiles = [];
-  csRenderDiscountFiles();
+  uiDocsMount('dr-doc', 'dr-docs', bill.patient?.id);
   csRecalcDiscount();
   closeModal('modal-process-payment');
   openModal('modal-discount');
@@ -369,37 +367,6 @@ function csRecalcDiscount() {
   document.getElementById('dr-disc').textContent = uiMoney(amount);
   document.getElementById('dr-pct').textContent = due ? `${(amount / due * 100).toFixed(1)}%` : '0%';
   document.getElementById('dr-final').textContent = uiMoney(due - amount);
-}
-
-function csOnDiscountFiles(input) {
-  for (const file of input.files) {
-    const extension = file.name.split('.').pop().toLowerCase();
-    if (!CASH_DOC_EXTENSIONS.includes(extension)) {
-      showToast('File not accepted', `${file.name}: use PDF, JPG, PNG or DOCX.`, 'error');
-    } else if (file.size > 10 * 1048576) {
-      showToast('File too large', `${file.name} is over 10 MB.`, 'error');
-    } else if (CASH_UI.discountFiles.length >= 5) {
-      showToast('Too many files', 'Attach at most 5 documents.', 'error');
-      break;
-    } else if (!CASH_UI.discountFiles.some(f => f.name === file.name && f.size === file.size)) {
-      CASH_UI.discountFiles.push(file);
-    }
-  }
-  input.value = '';
-  csRenderDiscountFiles();
-}
-
-function csRemoveDiscountFile(index) {
-  CASH_UI.discountFiles.splice(index, 1);
-  csRenderDiscountFiles();
-}
-
-function csRenderDiscountFiles() {
-  document.getElementById('dr-file-list').innerHTML = CASH_UI.discountFiles.map((file, index) => `
-    <div class="file-item" style="margin-top:6px;padding:8px 10px">
-      <div class="file-info"><div class="file-name">${KSI.esc(file.name)}</div><div class="file-meta">${uiFileSize(file.size)}</div></div>
-      <button class="btn btn-ghost btn-sm" type="button" onclick="csRemoveDiscountFile(${index})">Remove</button>
-    </div>`).join('');
 }
 
 async function csSubmitDiscount() {
@@ -417,17 +384,7 @@ async function csSubmitDiscount() {
   const result = await admBusy(button, async () => {
     try {
       const response = await KSI.post(`bills/${bill.id}/discount-request`, body);
-      let failed = 0;
-      for (const file of CASH_UI.discountFiles) {
-        const data = new FormData();
-        data.append('file', file, file.name);
-        try {
-          await KSI.upload(`approvals/${response.approval.id}/files`, data);
-        } catch {
-          failed++;
-        }
-      }
-      return { ...response, failed };
+      return { ...response, failed: await uiDocsUpload('dr-doc', response.approval.id) };
     } catch (error) {
       KSI.reportError(error, form, 'Request not sent');
       return null;

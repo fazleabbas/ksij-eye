@@ -836,6 +836,7 @@ async function optOpenDiscount(id) {
   document.getElementById('opt-discount-amount').max = order.total_amount;
   document.getElementById('opt-discount-sponsor').value = '';
   document.getElementById('opt-discount-remarks').value = '';
+  uiDocsMount('opt-discount-doc', 'opt-discount-docs', order.patient?.id);
   openModal('modal-opt-discount');
 }
 
@@ -850,9 +851,11 @@ async function optSubmitDiscount(button) {
         sponsor: document.getElementById('opt-discount-sponsor').value,
         remarks: document.getElementById('opt-discount-remarks').value,
       });
+      const failed = await uiDocsUpload('opt-discount-doc', order.approval_id);
       closeModal('modal-opt-discount');
       closeModal('modal-opt-detail');
-      showToast('Sent for approval', `${order.order_no} — an administrator will decide.`, 'info');
+      showToast('Sent for approval', `${order.order_no} — an administrator will decide.`
+        + (failed ? ` ${failed} document(s) could not be attached.` : ''), failed ? 'error' : 'info');
       await optRefreshLists();
     } catch (error) {
       KSI.reportError(error, modal, 'Could not ask for the discount');
