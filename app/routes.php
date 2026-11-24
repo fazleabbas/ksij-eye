@@ -91,6 +91,8 @@ return static function (Router $r): void {
     $r->add('POST', '/visits',             [VisitController::class, 'store'],   'visits.create');
     $r->add('GET',  '/visits/{id}',        [VisitController::class, 'show'],    'visits.view');
     $r->add('POST', '/visits/{id}/cancel', [VisitController::class, 'cancel'],  'visits.cancel');
+    $r->add('POST', '/visits/{id}/end',    [VisitController::class, 'end'],     'visits.end');
+    $r->add('POST', '/visits/{id}/readmit', [VisitController::class, 'readmit'], 'visits.readmit');
     $r->add('GET',  '/visits/{id}/fast-track', [VisitController::class, 'fastTrackQuote'], 'payments.fast_track');
     $r->add('POST', '/visits/{id}/fast-track', [VisitController::class, 'fastTrack'],      'payments.fast_track');
 

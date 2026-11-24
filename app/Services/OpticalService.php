@@ -561,6 +561,8 @@ final class OpticalService
                     }
                 }
             }
+            // Spectacles ordered may be the last of the day's services: the visit is then discharged.
+            VisitService::settle((int) $assessment['visit_id'], $ctx->userId, 'Spectacles ordered');
             return self::present(self::find($orderId));
         });
     }

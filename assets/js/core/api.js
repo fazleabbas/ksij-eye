@@ -188,6 +188,7 @@ const KSI = (() => {
   function goToSignIn(expired) {
     if (redirecting) return;
     redirecting = true;
+    window.KSI_LEAVING = true; // no "unsaved changes" prompt when the session has ended
     window.location.replace(basePath + (expired ? '?expired=1' : ''));
   }
 

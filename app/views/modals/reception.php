@@ -105,7 +105,7 @@
 </div>
 
 <!-- ══ REGISTER / EDIT PATIENT ══════════════════════════════════════════ -->
-<div class="modal-overlay" id="modal-patient-form">
+<div class="modal-overlay" id="modal-patient-form" data-keep-open>
   <div class="modal modal-lg">
     <div class="modal-header">
       <div>
@@ -115,6 +115,10 @@
       <button class="modal-close" type="button" onclick="closeModal('modal-patient-form')" aria-label="Close">&times;</button>
     </div>
     <form class="modal-body" id="pf-form" novalidate onsubmit="event.preventDefault()">
+      <div class="alert alert-info" id="pf-draft-note" style="display:none;margin-bottom:14px;justify-content:space-between;align-items:center;gap:12px">
+        <div><strong>Your unfinished registration is back.</strong> Everything typed earlier has been kept; finish it and register the patient.</div>
+        <button class="btn btn-secondary btn-sm" type="button" onclick="ptDiscardDraft()">Start over</button>
+      </div>
       <div class="alert alert-warning" id="pf-duplicates" style="display:none;margin-bottom:14px;flex-direction:column"></div>
       <div id="pf-type-section">
         <div class="form-section-title" style="margin-top:0">Patient</div>
@@ -273,7 +277,11 @@
     <div class="modal-body" id="vd-body"></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" type="button" id="vd-cancel-btn" style="color:var(--red);display:none" onclick="vsOpenCancel()">Cancel Visit</button>
-      <button class="btn btn-secondary" type="button" onclick="closeModal('modal-visit-detail')">Close</button>
+      <div class="flex-gap">
+        <button class="btn btn-secondary" type="button" id="vd-readmit-btn" style="display:none" onclick="vsOpenReadmit()">Re-admit</button>
+        <button class="btn btn-primary" type="button" id="vd-end-btn" style="display:none" onclick="vsOpenEnd()">End Visit (Discharge)</button>
+        <button class="btn btn-secondary" type="button" onclick="closeModal('modal-visit-detail')">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -298,6 +306,62 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" type="button" onclick="closeModal('modal-cancel-visit')">Back</button>
       <button class="btn btn-danger" type="button" id="cv-confirm" onclick="vsConfirmCancel()">Cancel Visit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ END VISIT (DISCHARGE) ═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-end-visit">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">End Visit (Discharge)</div>
+        <div class="modal-subtitle" id="ev-subtitle"></div>
+      </div>
+      <button class="modal-close" type="button" onclick="closeModal('modal-end-visit')" aria-label="Close">&times;</button>
+    </div>
+    <form class="modal-body" id="ev-form" novalidate onsubmit="event.preventDefault();vsConfirmEnd()">
+      <div id="ev-outstanding"></div>
+      <div class="form-group">
+        <label class="form-label" for="ev-reason">Reason <span class="required">*</span></label>
+        <textarea class="form-input" id="ev-reason" rows="3" maxlength="500" data-field="reason" placeholder="e.g. Patient went home; will collect the medicines tomorrow"></textarea>
+      </div>
+    </form>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" type="button" onclick="closeModal('modal-end-visit')">Back</button>
+      <button class="btn btn-primary" type="button" id="ev-confirm" onclick="vsConfirmEnd()">End Visit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RE-ADMIT ═════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-readmit-visit">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Re-admit Patient</div>
+        <div class="modal-subtitle" id="ra-subtitle"></div>
+      </div>
+      <button class="modal-close" type="button" onclick="closeModal('modal-readmit-visit')" aria-label="Close">&times;</button>
+    </div>
+    <form class="modal-body" id="ra-form" novalidate onsubmit="event.preventDefault();vsConfirmReadmit()">
+      <div class="alert alert-info" style="margin-bottom:14px"><div>The same visit opens again, with no new fee. If the patient was already seen there, that record reopens so the clinician continues in it.</div></div>
+      <div class="form-group" data-field="stage">
+        <label class="form-label">Send the patient to <span class="required">*</span></label>
+        <div class="radio-group">
+          <label class="radio-card"><input type="radio" name="ra-stage" value="ophthalmology" checked><div><div class="radio-card-label">Doctor</div><div class="radio-card-sub">Ophthalmology</div></div></label>
+          <label class="radio-card"><input type="radio" name="ra-stage" value="optometry"><div><div class="radio-card-label">Optometry</div><div class="radio-card-sub">Refraction, spectacles</div></div></label>
+          <label class="radio-card"><input type="radio" name="ra-stage" value="triage"><div><div class="radio-card-label">Triage</div><div class="radio-card-sub">Vitals, VA, IOP</div></div></label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="ra-reason">Reason <span class="required">*</span></label>
+        <textarea class="form-input" id="ra-reason" rows="3" maxlength="500" data-field="reason" placeholder="e.g. Back with the scan result for the doctor"></textarea>
+      </div>
+    </form>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" type="button" onclick="closeModal('modal-readmit-visit')">Back</button>
+      <button class="btn btn-primary" type="button" id="ra-confirm" onclick="vsConfirmReadmit()">Re-admit</button>
     </div>
   </div>
 </div>

@@ -43,8 +43,11 @@
               <option value="waiting_triage">Waiting For Triage</option>
               <option value="waiting_doctor">Waiting For Doctor</option>
               <option value="waiting_investigation">Waiting For Investigation</option>
+              <option value="waiting_optometry">Waiting For Optometry</option>
+              <option value="waiting_ophthalmology">Waiting For Ophthalmology</option>
               <option value="in_progress">In Progress</option>
-              <option value="completed">Complete</option>
+              <option value="awaiting_services">Awaiting Other Services</option>
+              <option value="completed">Discharged</option>
               <option value="cancelled">Cancelled</option>
             </select>
             <input type="date" class="filter-select" id="vs-from" data-default-today onchange="vsFilterChanged()" title="Visit date from">
@@ -162,8 +165,11 @@
                 <option value="waiting_triage">Waiting For Triage</option>
                 <option value="waiting_doctor">Waiting For Doctor</option>
                 <option value="waiting_investigation">Waiting For Investigation</option>
+                <option value="waiting_optometry">Waiting For Optometry</option>
+                <option value="waiting_ophthalmology">Waiting For Ophthalmology</option>
                 <option value="in_progress">In Progress</option>
-                <option value="completed">Complete</option>
+                <option value="awaiting_services">Awaiting Other Services</option>
+                <option value="completed">Discharged</option>
                 <option value="cancelled">Cancelled</option>
               </select>
               <select class="filter-select" id="pt-today-type" onchange="ptTodayFilterChanged()">

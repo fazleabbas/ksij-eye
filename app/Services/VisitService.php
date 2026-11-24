@@ -29,6 +29,16 @@ final class VisitService
 
     public const OPEN_STATUSES = ['pending_payment', 'waiting_triage', 'waiting_doctor', 'waiting_investigation', 'waiting_optometry', 'waiting_ophthalmology'];
 
+    /** Visits Reception may end by hand: waiting somewhere, or seen and waiting for the day's other services. */
+    public const ENDABLE_STATUSES = ['waiting_triage', 'waiting_doctor', 'waiting_investigation', 'waiting_optometry', 'waiting_ophthalmology', 'awaiting_services'];
+
+    /** Where a re-admitted visit goes: the queue it waits in, and the stage record that reopens. */
+    public const READMIT_STAGES = [
+        'triage' => ['status' => 'waiting_triage', 'table' => 'triage_assessments', 'label' => 'Triage'],
+        'optometry' => ['status' => 'waiting_optometry', 'table' => 'optometry_assessments', 'label' => 'Optometry'],
+        'ophthalmology' => ['status' => 'waiting_ophthalmology', 'table' => 'ophthalmology_consultations', 'label' => 'the Doctor'],
+    ];
+
     public static function waitingStatus(string $destination): string
     {
         return match ($destination) {
@@ -248,6 +258,188 @@ final class VisitService
              VALUES (:v, :f, :t, UTC_TIMESTAMP(3), :by, :n)',
             ['v' => $visitId, 'f' => $from, 't' => $to, 'by' => $userId, 'n' => $note === null ? null : mb_substr($note, 0, 255)]
         );
+    }
+
+    // ─── Discharge and re-admission ──────────────────────────────────────
+
+    /**
+     * The day's services of this visit that are not done yet, besides the clinical stages:
+     * tests booked up to today, issued prescriptions not yet collected at the pharmacy, and
+     * spectacles the optometrist referred for that the Optical Room has not ordered.
+     * Each item is ['kind' => diagnostic|pharmacy|optical, 'label' => text].
+     */
+    public static function outstanding(int $visitId): array
+    {
+        $items = [];
+        foreach (Database::all(
+            "SELECT b.booking_no, b.status, pi.name FROM diagnostic_bookings b JOIN price_items pi ON pi.id = b.price_item_id
+              WHERE b.visit_id = :v AND b.status IN ('scheduled', 'arrived', 'cancellation_requested') AND DATE(b.scheduled_for) <= :today
+              ORDER BY b.id",
+            ['v' => $visitId, 'today' => Format::localToday()]
+        ) as $b) {
+            $items[] = ['kind' => 'diagnostic', 'label' => "{$b['name']} ({$b['booking_no']}) — " . ($b['status'] === 'arrived' ? 'not yet reported' : 'not yet done')];
+        }
+        foreach (Database::all(
+            "SELECT pr.prescription_no, o.status AS order_status
+               FROM prescriptions pr
+               LEFT JOIN pharmacy_orders o ON o.prescription_id = pr.id
+              WHERE pr.visit_id = :v AND pr.status = 'issued'
+                AND EXISTS (SELECT 1 FROM prescription_items i WHERE i.prescription_id = pr.id AND i.drug_id IS NOT NULL)
+                AND (o.id IS NULL OR o.status IN ('pending_review', 'awaiting_payment', 'paid'))
+              ORDER BY pr.id",
+            ['v' => $visitId]
+        ) as $p) {
+            $items[] = ['kind' => 'pharmacy', 'label' => 'Medicines' . ($p['prescription_no'] ? " ({$p['prescription_no']})" : '') . ' — not yet collected at the Pharmacy'];
+        }
+        $spectacles = (int) Database::value(
+            "SELECT COUNT(*) FROM optometry_assessments a
+              WHERE a.visit_id = :v AND a.status = 'completed' AND a.refer_optical = 1
+                AND NOT EXISTS (SELECT 1 FROM optical_orders o WHERE o.assessment_id = a.id AND o.order_type = 'referral')",
+            ['v' => $visitId]
+        );
+        if ($spectacles > 0) {
+            $items[] = ['kind' => 'optical', 'label' => 'Spectacles — not yet ordered at the Optical Room'];
+        }
+        return $items;
+    }
+
+    /** The status a visit takes when its clinician finishes: discharged, or waiting for the day's other services. */
+    public static function dischargeStatus(int $visitId): string
+    {
+        return self::outstanding($visitId) ? 'awaiting_services' : 'completed';
+    }
+
+    /**
+     * Discharges a visit waiting for other services once none is left. Called after a test is
+     * reported, medicines are handed over or spectacles are ordered. Returns true when discharged.
+     */
+    public static function settle(?int $visitId, ?int $userId, string $reason = 'All services done'): bool
+    {
+        if ($visitId === null) {
+            return false;
+        }
+        $visit = Database::one('SELECT id, status FROM visits WHERE id = :id FOR UPDATE', ['id' => $visitId]);
+        if ($visit === null || $visit['status'] !== 'awaiting_services' || self::outstanding($visitId)) {
+            return false;
+        }
+        Database::execute(
+            "UPDATE visits SET status = 'completed', completed_at = UTC_TIMESTAMP(3), updated_at = UTC_TIMESTAMP(3), updated_by = :by,
+                    row_version = row_version + 1
+              WHERE id = :id",
+            ['by' => $userId, 'id' => $visitId]
+        );
+        self::recordStatus($visitId, 'awaiting_services', 'completed', $userId, "$reason — discharged");
+        return true;
+    }
+
+    /**
+     * Re-checks recent visits waiting for other services, so one is discharged even when its last
+     * service was settled somewhere that does not call settle() (e.g. a test cancelled through approvals).
+     */
+    public static function settleWaiting(): void
+    {
+        $ids = array_map('intval', array_column(Database::all(
+            "SELECT id FROM visits WHERE status = 'awaiting_services' AND visit_date >= :since ORDER BY id LIMIT 200",
+            ['since' => (new \DateTimeImmutable(Format::localToday()))->modify('-30 days')->format('Y-m-d')]
+        ), 'id'));
+        foreach ($ids as $id) {
+            if (!self::outstanding($id)) {
+                Database::transaction(static fn () => self::settle($id, null));
+            }
+        }
+    }
+
+    /** Reception ends (discharges) an open visit by hand — e.g. the patient left. Returns what was still outstanding. */
+    public static function end(int $visitId, string $reason, int $userId): array
+    {
+        $visit = Database::one('SELECT id, status, clinical_stage FROM visits WHERE id = :id FOR UPDATE', ['id' => $visitId])
+            ?? throw HttpException::notFound('Visit not found.');
+        match (true) {
+            $visit['status'] === 'in_progress' => throw HttpException::conflict('visit_in_progress',
+                'A clinician is seeing this patient now. They must complete the record or return the patient to the queue first.'),
+            $visit['status'] === 'pending_payment' => throw HttpException::conflict('visit_unpaid',
+                'This visit has not been paid for, so nothing has started. Cancel the visit instead.'),
+            $visit['status'] === 'completed' => throw HttpException::conflict('visit_discharged', 'This visit has already been discharged.'),
+            $visit['status'] === 'cancelled' => throw HttpException::conflict('visit_cancelled', 'This visit has been cancelled.'),
+            default => null,
+        };
+        $outstanding = self::outstanding($visitId);
+        Database::execute(
+            "UPDATE visits SET status = 'completed', completed_at = UTC_TIMESTAMP(3), ended_by = :by, end_reason_enc = :r,
+                    updated_at = UTC_TIMESTAMP(3), updated_by = :by2, row_version = row_version + 1
+              WHERE id = :id",
+            ['by' => $userId, 'by2' => $userId, 'r' => Crypto::encrypt($reason, 'visits.end_reason'), 'id' => $visitId]
+        );
+        $left = $visit['status'] === 'awaiting_services' ? [] : ['the ' . self::stageName($visit['status'])];
+        if ($outstanding) {
+            $left[] = count($outstanding) . ' other service' . (count($outstanding) === 1 ? '' : 's');
+        }
+        self::recordStatus($visitId, $visit['status'], 'completed', $userId,
+            'Visit ended by Reception' . ($left ? ' — still outstanding: ' . implode(', ', $left) : ''));
+        return $outstanding;
+    }
+
+    /**
+     * Brings a discharged visit back: it waits again for Triage, Optometry or the Doctor, with no
+     * new fee, and that stage's completed record reopens as a draft for the clinician to continue.
+     * Returns whether a record was reopened.
+     */
+    public static function readmit(int $visitId, string $stage, string $reason, int $userId): bool
+    {
+        $target = self::READMIT_STAGES[$stage] ?? throw HttpException::validation(['stage' => 'Choose where the patient goes.']);
+        $visit = Database::one('SELECT id, patient_id, visit_no, visit_date, status FROM visits WHERE id = :id FOR UPDATE', ['id' => $visitId])
+            ?? throw HttpException::notFound('Visit not found.');
+        if (!in_array($visit['status'], ['completed', 'awaiting_services'], true)) {
+            throw HttpException::conflict('visit_not_discharged', $visit['status'] === 'cancelled'
+                ? 'A cancelled visit cannot be re-admitted. Create a new visit.'
+                : 'This visit is still open. Only a discharged visit can be re-admitted.');
+        }
+        $days = self::readmitDays();
+        $earliest = (new \DateTimeImmutable(Format::localToday()))->modify("-$days days")->format('Y-m-d');
+        if ($visit['visit_date'] < $earliest) {
+            throw HttpException::conflict('readmit_too_late', "Only visits from the last $days days can be re-admitted. Create a new visit.");
+        }
+        $other = Database::value(
+            "SELECT visit_no FROM visits WHERE patient_id = :p AND id <> :id AND visit_date = :d AND status NOT IN ('completed', 'cancelled') LIMIT 1",
+            ['p' => (int) $visit['patient_id'], 'id' => $visitId, 'd' => Format::localToday()]
+        );
+        if ($other) {
+            throw HttpException::conflict('open_visit_exists', "This patient already has an open visit today ($other). Continue with that visit.");
+        }
+
+        Database::execute(
+            'UPDATE visits SET status = :s, clinical_stage = NULL, attending_user_id = NULL, attending_since = NULL, completed_at = NULL,
+                    ended_by = NULL, end_reason_enc = NULL, readmit_count = readmit_count + 1, readmitted_at = UTC_TIMESTAMP(3),
+                    readmitted_by = :by, readmit_reason_enc = :r, updated_at = UTC_TIMESTAMP(3), updated_by = :by2, row_version = row_version + 1
+              WHERE id = :id',
+            ['s' => $target['status'], 'by' => $userId, 'by2' => $userId, 'r' => Crypto::encrypt($reason, 'visits.readmit_reason'), 'id' => $visitId]
+        );
+        $table = $target['table'];
+        $reopened = Database::execute(
+            "UPDATE $table SET status = 'draft', reopened_at = UTC_TIMESTAMP(3), reopened_by = :by,
+                    updated_at = UTC_TIMESTAMP(3), updated_by = :by2, row_version = row_version + 1
+              WHERE visit_id = :v AND status = 'completed'",
+            ['by' => $userId, 'by2' => $userId, 'v' => $visitId]
+        ) > 0;
+        self::recordStatus($visitId, $visit['status'], $target['status'], $userId,
+            "Re-admitted to {$target['label']}" . ($reopened ? ' (earlier record reopened)' : ''));
+        return $reopened;
+    }
+
+    public static function readmitDays(): int
+    {
+        return Settings::int('visits.readmit_days', 7);
+    }
+
+    private static function stageName(string $status): string
+    {
+        return match ($status) {
+            'waiting_triage' => 'Triage',
+            'waiting_doctor', 'waiting_ophthalmology' => 'Doctor',
+            'waiting_investigation' => 'investigation',
+            'waiting_optometry' => 'Optometry',
+            default => 'visit',
+        };
     }
 
     /**

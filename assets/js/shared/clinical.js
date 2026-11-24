@@ -527,6 +527,7 @@ function clBanner(visit) {
         ${visit.is_fast_track ? '<span class="badge badge-fasttrack">Fast track</span>' : ''}
         ${visit.is_emergency ? `<span class="emg-badge">EMERGENCY${visit.emergency_reason ? ` · ${KSI.esc(visit.emergency_reason)}` : ''}</span>` : ''}
         ${uiBadge('visitStatus', visit.status)}
+        ${visit.readmitted ? `<span class="badge badge-pending" title="${KSI.esc(visit.readmitted.reason || '')}">Re-admitted ${KSI.fmtDateTime(visit.readmitted.at)}${visit.readmitted.reason ? ` · ${KSI.esc(visit.readmitted.reason)}` : ''}</span>` : ''}
       </div>
     </div>`;
 }

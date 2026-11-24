@@ -404,24 +404,34 @@ final class DiagnosticService
                 ['id' => (int) $booking['request_id']]
             );
         }
+        VisitService::settle($booking['visit_id'] === null ? null : (int) $booking['visit_id'], $ctx->userId, "Investigation {$booking['booking_no']} cancelled");
     }
 
     // ─── Report ──────────────────────────────────────────────────────────
 
     /**
-     * A patient sent from reception just for a test is done once it is reported: the visit ends.
-     * An unpaid consultation bill stays open at the cashier.
+     * A patient sent from reception just for a test is done once it is reported: the visit is
+     * discharged (or waits, if another test is still booked for today). Any other visit waiting
+     * for its tests is discharged once the last is reported. An unpaid consultation bill stays
+     * open at the cashier.
      */
     private static function endInvestigationVisit(array $booking, AuthContext $ctx): void
     {
-        if ($booking['source'] !== 'visit' || $booking['visit_id'] === null) {
+        if ($booking['visit_id'] === null) {
             return;
         }
         $visit = Database::one('SELECT id, status, destination FROM visits WHERE id = :id FOR UPDATE', ['id' => (int) $booking['visit_id']]);
-        if ($visit !== null && $visit['destination'] === 'investigation'
+        if ($booking['source'] === 'visit' && $visit !== null && $visit['destination'] === 'investigation'
             && in_array($visit['status'], ['pending_payment', 'waiting_investigation'], true)) {
-            VisitService::changeStatus((int) $visit['id'], $visit['status'], 'completed', $ctx->userId, "Investigation {$booking['booking_no']} reported");
+            $next = VisitService::dischargeStatus((int) $visit['id']);
+            VisitService::changeStatus((int) $visit['id'], $visit['status'], $next, $ctx->userId,
+                "Investigation {$booking['booking_no']} reported" . ($next === 'completed' ? ' — discharged' : ''));
+            if ($next === 'completed') {
+                Database::execute('UPDATE visits SET completed_at = UTC_TIMESTAMP(3) WHERE id = :id', ['id' => (int) $visit['id']]);
+            }
+            return;
         }
+        VisitService::settle((int) $booking['visit_id'], $ctx->userId, "Investigation {$booking['booking_no']} reported");
     }
 
     /**

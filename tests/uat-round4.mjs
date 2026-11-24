@@ -88,7 +88,9 @@ check('the doctor\'s consultation is shown to the optometrist', ws.upstream.opht
 await post(`optometry/visits/${childVisit.id}/complete`, optometryDone({
   refer_ophthalmology: true, refer_optical: true, refractions: { final: { sph_right: -2, sph_left: -1.5 } }, row_version: ws.record.row_version,
 }));
-equal('after the doctor\'s referral the visit ends at Optometry', status(childVisit.id), 'completed');
+// The clinical part ends at Optometry; with spectacles to order, the visit waits for the Optical Room (UAT: discharge).
+equal('after the doctor\'s referral the clinical part ends at Optometry; the visit waits for the spectacles order', status(childVisit.id), 'awaiting_services');
+check('…and is not sent back to the doctor', !(await get('ophthalmology/queue')).queue.some(q => q.visit_id === childVisit.id));
 equal('the change to the refraction is kept', sql(`SELECT sph_right FROM optometry_refractions r JOIN optometry_assessments a ON a.id = r.assessment_id WHERE a.visit_id = ${childVisit.id} AND r.kind = 'final' AND r.set_no = 1`), '-2.00');
 equal('the earlier referral to Ophthalmology is kept as it was', sql(`SELECT refer_ophthalmology FROM optometry_assessments WHERE visit_id = ${childVisit.id}`), '1');
 check('the change is in the audit log', sql(`SELECT COUNT(*) FROM audit_log WHERE module = 'optometry' AND action = 'record.completed' AND entity_id = '${childVisit.visit_no}' AND changes LIKE '%refractions%'`) !== '0');

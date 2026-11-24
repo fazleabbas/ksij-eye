@@ -90,7 +90,7 @@ async function vsOpenVisit(visitId) {
   body.innerHTML = '<div class="muted-note" style="padding:20px;text-align:center">Loading…</div>';
   document.getElementById('vd-title').textContent = 'Visit';
   document.getElementById('vd-subtitle').textContent = '';
-  document.getElementById('vd-cancel-btn').style.display = 'none';
+  ['vd-cancel-btn', 'vd-end-btn', 'vd-readmit-btn'].forEach(id => { document.getElementById(id).style.display = 'none'; });
   openModal('modal-visit-detail');
   try {
     const { visit, history } = await KSI.get(`visits/${visitId}`);
@@ -113,7 +113,17 @@ async function vsOpenVisit(visitId) {
     }
     if (visit.exemption_reason) fields.push(uiField('Fee', `<span style="color:var(--green)">${KSI.esc(visit.exemption_reason)}</span>`, true));
     if (visit.status === 'cancelled') fields.push(uiField('Cancelled', KSI.esc(`${KSI.fmtDateTime(visit.cancelled_at)} — ${visit.cancel_reason || ''}`), true));
+    if (visit.discharged_at) {
+      fields.push(uiField('Discharged', KSI.esc(visit.ended_by
+        ? `${KSI.fmtDateTime(visit.discharged_at)} — ended by ${visit.ended_by}${visit.end_reason ? `: ${visit.end_reason}` : ''}`
+        : `${KSI.fmtDateTime(visit.discharged_at)} — automatically, once all of the day's services were done`), true));
+    }
+    if (visit.readmit_count) {
+      fields.push(uiField('Re-admitted', KSI.esc(`${KSI.fmtDateTime(visit.readmitted_at)} · ${visit.readmitted_by || ''}${visit.readmit_reason ? ` — ${visit.readmit_reason}` : ''}`
+        + (visit.readmit_count > 1 ? ` (${visit.readmit_count} times)` : '')), true));
+    }
     body.innerHTML = `
+      ${vsOutstandingHtml(visit)}
       <div class="detail-grid">${fields.join('')}</div>
       <div class="form-section-title">Status History</div>
       <ul class="status-timeline">${history.map(h => `<li>
@@ -123,6 +133,8 @@ async function vsOpenVisit(visitId) {
       </li>`).join('')}</ul>`;
     const cancellable = KSI.can('visits.cancel') && VISIT_OPEN_STATUSES.includes(visit.status);
     document.getElementById('vd-cancel-btn').style.display = cancellable ? '' : 'none';
+    document.getElementById('vd-end-btn').style.display = KSI.can('visits.end') && visit.can_end ? '' : 'none';
+    document.getElementById('vd-readmit-btn').style.display = KSI.can('visits.readmit') && visit.can_readmit ? '' : 'none';
   } catch (error) {
     body.innerHTML = `<div class="muted-note" style="padding:20px;text-align:center">${KSI.esc(error.message)}</div>`;
   }
@@ -152,6 +164,82 @@ async function vsConfirmCancel() {
       vsRefreshLists();
     } catch (error) {
       KSI.reportError(error, form, 'Visit not cancelled');
+    }
+  });
+}
+
+/** What is still to be done today for this visit (tests, medicines, spectacles). */
+function vsOutstandingHtml(visit) {
+  if (!visit.outstanding?.length) return '';
+  return `<div class="alert alert-warning" style="margin-bottom:14px"><div>
+    <strong>Still to be done today:</strong>
+    <ul style="margin:6px 0 0 18px">${visit.outstanding.map(o => `<li>${KSI.esc(o.label)}</li>`).join('')}</ul>
+    ${visit.status === 'awaiting_services' ? '<div class="sub-text" style="margin-top:6px">The visit is discharged automatically once these are done.</div>' : ''}
+  </div></div>`;
+}
+
+// ── End visit (discharge) & re-admit ──
+function vsOpenEnd() {
+  const visit = VISIT_UI.detail;
+  if (!visit) return;
+  const form = document.getElementById('ev-form');
+  form.reset();
+  KSI.clearFieldErrors(form);
+  document.getElementById('ev-subtitle').textContent = `${visit.visit_no} · ${visit.patient.full_name}`;
+  const waiting = visit.status !== 'awaiting_services'
+    ? `<div class="alert alert-warning" style="margin-bottom:14px"><div>The patient is still <strong>${KSI.esc(uiLabel('visitStatus', visit.status).toLowerCase())}</strong>. Ending the visit takes them off that queue.</div></div>`
+    : '';
+  document.getElementById('ev-outstanding').innerHTML = waiting + (visit.outstanding?.length
+    ? vsOutstandingHtml({ ...visit, status: '' }).replace('Still to be done today:', 'Still to be done today — these stay open at their departments:')
+    : (waiting ? '' : '<div class="alert alert-info" style="margin-bottom:14px"><div>Nothing else is outstanding for today.</div></div>'));
+  openModal('modal-end-visit');
+  setTimeout(() => document.getElementById('ev-reason').focus(), 50);
+}
+
+async function vsConfirmEnd() {
+  const visit = VISIT_UI.detail;
+  const form = document.getElementById('ev-form');
+  KSI.clearFieldErrors(form);
+  await admBusy(document.getElementById('ev-confirm'), async () => {
+    try {
+      await KSI.post(`visits/${visit.id}/end`, { reason: document.getElementById('ev-reason').value.trim() });
+      closeModal('modal-end-visit');
+      closeModal('modal-visit-detail');
+      showToast('Visit ended', `${visit.visit_no} — ${visit.patient.full_name} has been discharged.`, 'success');
+      vsRefreshLists();
+    } catch (error) {
+      KSI.reportError(error, form, 'Visit not ended');
+    }
+  });
+}
+
+function vsOpenReadmit() {
+  const visit = VISIT_UI.detail;
+  if (!visit) return;
+  const form = document.getElementById('ra-form');
+  form.reset();
+  KSI.clearFieldErrors(form);
+  uiSetRadio('ra-stage', 'ophthalmology');
+  document.getElementById('ra-subtitle').textContent = `${visit.visit_no} · ${visit.patient.full_name}`;
+  openModal('modal-readmit-visit');
+  setTimeout(() => document.getElementById('ra-reason').focus(), 50);
+}
+
+async function vsConfirmReadmit() {
+  const visit = VISIT_UI.detail;
+  const form = document.getElementById('ra-form');
+  KSI.clearFieldErrors(form);
+  const stage = uiRadioValue('ra-stage');
+  await admBusy(document.getElementById('ra-confirm'), async () => {
+    try {
+      const result = await KSI.post(`visits/${visit.id}/readmit`, { stage, reason: document.getElementById('ra-reason').value.trim() });
+      closeModal('modal-readmit-visit');
+      closeModal('modal-visit-detail');
+      const where = { ophthalmology: 'the Doctor', optometry: 'Optometry', triage: 'Triage' }[stage];
+      showToast('Patient re-admitted', `${visit.visit_no} is waiting for ${where}${result.reopened ? '; the earlier record has been reopened' : ''}.`, 'success');
+      vsRefreshLists();
+    } catch (error) {
+      KSI.reportError(error, form, 'Patient not re-admitted');
     }
   });
 }
@@ -472,7 +560,7 @@ async function ptLoadToday() {
     const waiting = c.waiting_triage + c.waiting_doctor + c.waiting_investigation + c.waiting_optometry + c.waiting_ophthalmology;
     const kpis = [
       ['Visits Today', summary.total, 'teal'], ['Pending Payment', c.pending_payment, 'amber'], ['Waiting', waiting, 'blue'],
-      ['In Progress', c.in_progress, 'purple'], ['Complete', c.completed, 'teal'], ['Cancelled', c.cancelled, 'amber'],
+      ['In Progress', c.in_progress + c.awaiting_services, 'purple'], ['Discharged', c.completed, 'teal'], ['Cancelled', c.cancelled, 'amber'],
     ];
     document.getElementById('pt-today-kpis').innerHTML = kpis.map(([label, value, color]) => `
       <div class="stat-card"><div class="stat-icon ${color}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></div>
@@ -713,6 +801,64 @@ function ptTypeChanged() {
     : 'The file number is assigned automatically when saved';
 }
 
+// ── Registration draft ──
+// What has been typed into Register Patient is kept until the patient is saved or the user
+// chooses Start over: closing the form, moving to another screen or clicking outside it loses
+// nothing. The draft lives in this page only — patient details are never written to the
+// browser's storage — and leaving or reloading the page with a draft asks first.
+let PT_DRAFT = null;
+
+function ptCaptureDraft() {
+  if (PAT_UI.editing) return;
+  const values = {};
+  document.querySelectorAll('#pf-form [data-field]').forEach(input => { values[input.dataset.field] = input.value; });
+  const filled = Object.entries(values).some(([field, value]) => field !== 'kin_relationship' && String(value).trim() !== '')
+    || values.kin_relationship;
+  PT_DRAFT = filled ? { values, type: uiRadioValue('pf-type') || 'new' } : null;
+  ptDraftButton();
+}
+
+function ptRestoreDraft() {
+  if (!PT_DRAFT) return false;
+  const form = document.getElementById('pf-form');
+  uiSetRadio('pf-type', PT_DRAFT.type);
+  ptTypeChanged();
+  Object.entries(PT_DRAFT.values).forEach(([field, value]) => {
+    const input = form.querySelector(`[data-field="${field}"]`);
+    if (input) input.value = value;
+  });
+  ptKinRelChanged();
+  ptUpdateAge();
+  return true;
+}
+
+function ptDiscardDraft() {
+  PT_DRAFT = null;
+  ptDraftButton();
+  ptResetForm();
+  document.getElementById('pf-draft-note').style.display = 'none';
+  document.querySelector('#pf-form [data-field="first_name"]').focus();
+}
+
+/** The New Patient button says when there is an unfinished registration to go back to. */
+function ptDraftButton() {
+  const button = document.getElementById('pt-new-btn');
+  if (!button) return;
+  const label = [...button.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+  if (label) label.textContent = PT_DRAFT ? ' Continue Registration ' : ' New Patient ';
+}
+
+window.addEventListener('beforeunload', event => {
+  if (PT_DRAFT && !window.KSI_LEAVING) {
+    event.preventDefault();
+    event.returnValue = '';
+  }
+});
+
+// The form's markup is on the page before this script runs.
+document.getElementById('pf-form')?.addEventListener('input', ptCaptureDraft);
+document.getElementById('pf-form')?.addEventListener('change', ptCaptureDraft);
+
 async function ptOpenRegister() {
   if (!KSI.can('patients.create')) return;
   try {
@@ -726,6 +872,8 @@ async function ptOpenRegister() {
   document.getElementById('pf-title').textContent = 'Register Patient';
   document.getElementById('pf-type-section').style.display = '';
   ptTypeChanged();
+  const restored = ptRestoreDraft();
+  document.getElementById('pf-draft-note').style.display = restored ? '' : 'none';
   document.getElementById('pf-save').textContent = 'Register Patient';
   openModal('modal-patient-form');
   setTimeout(() => document.querySelector('#pf-form [data-field="first_name"]').focus(), 50);
@@ -742,6 +890,7 @@ async function ptOpenEdit() {
   }
   PAT_UI.editing = patient;
   const form = ptResetForm();
+  document.getElementById('pf-draft-note').style.display = 'none';
   ['first_name', 'middle_name', 'last_name', 'gender', 'date_of_birth', 'phone', 'address', 'kin_name', 'kin_relationship',
     'kin_relationship_other', 'kin_phone'].forEach(field => {
     form.querySelector(`[data-field="${field}"]`).value = patient[field] ?? '';
@@ -793,6 +942,10 @@ async function ptSavePatient(confirmDuplicate = false) {
   if (!result) return;
 
   const patient = result.patient;
+  if (!editing) {
+    PT_DRAFT = null;
+    ptDraftButton();
+  }
   closeModal('modal-patient-form');
   if (editing) {
     showToast('Patient updated', `${patient.reg_no} saved.`, 'success');

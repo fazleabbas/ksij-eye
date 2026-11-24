@@ -574,6 +574,8 @@ final class PharmacyService
                     'refill' => $refill ? 1 : 0, 'by' => $ctx->userId, 'id' => $id,
                 ]
             );
+            // Medicines handed over may be the last of the day's services: the visit is then discharged.
+            VisitService::settle($order['visit_id'] === null ? null : (int) $order['visit_id'], $ctx->userId, 'Medicines handed over');
             return self::present(self::find($id)) + ['dispensing_id' => $dispensingId];
         });
     }
@@ -626,6 +628,7 @@ final class PharmacyService
                     'by3' => $ctx->userId, 'reason2' => Crypto::encrypt($reason, 'pharmacy_orders.balance_close_reason'),
                 ]
             );
+            VisitService::settle($order['visit_id'] === null ? null : (int) $order['visit_id'], $ctx->userId, 'Pharmacy order closed');
             return self::present(self::find($id));
         });
     }

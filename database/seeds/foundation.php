@@ -21,6 +21,8 @@ return static function (PDO $pdo): void {
         ['visits.view', 'Visits', 'View visits'],
         ['visits.create', 'Visits', 'Create visits'],
         ['visits.cancel', 'Visits', 'Cancel visits'],
+        ['visits.end', 'Visits', 'End (discharge) a visit by hand'],
+        ['visits.readmit', 'Visits', 'Re-admit a discharged visit to Triage, Optometry or the Doctor'],
         ['visits.emergency', 'Visits', 'Send emergencies for treatment before payment'],
         ['visits.followups.view', 'Visits', 'View follow-ups due'],
         ['visits.followups.manage', 'Visits', 'Cancel follow-ups'],

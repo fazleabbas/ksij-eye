@@ -197,9 +197,17 @@ final class ClinicalService
         }
     }
 
-    /** Moves the visit on after a stage is completed. */
+    /**
+     * Moves the visit on after a stage is completed. When the clinical part is over, the visit is
+     * discharged only if nothing else is left for the day (a test, medicines, spectacles to order);
+     * otherwise it waits for those services and is discharged when the last is done.
+     */
     public static function finish(array $visit, string $nextStatus, int $userId, string $note): void
     {
+        if ($nextStatus === 'completed') {
+            $nextStatus = VisitService::dischargeStatus((int) $visit['id']);
+            $note .= $nextStatus === 'completed' ? ' — discharged' : ' — waiting for the other services booked today';
+        }
         Database::execute(
             'UPDATE visits SET status = :s, clinical_stage = NULL, attending_user_id = NULL, attending_since = NULL,
                     completed_at = IF(:done = 1, UTC_TIMESTAMP(3), completed_at),
@@ -269,6 +277,7 @@ final class ClinicalService
         $r = Database::one(
             "SELECT v.id, v.visit_no, v.visit_date, v.visit_type, v.sub_type, v.destination, v.room, v.status, v.clinical_stage,
                     v.is_emergency, v.is_fast_track, v.emergency_reason_enc, v.patient_age_years, v.attending_user_id, v.attending_since, v.created_at,
+                    v.readmit_count, v.readmitted_at, v.readmit_reason_enc,
                     p.id AS patient_id, p.reg_no, p.first_name_enc, p.middle_name_enc, p.last_name_enc, p.gender, p.date_of_birth_enc,
                     TRIM(CONCAT_WS(' ', au.first_name, au.last_name)) AS attending_name
                FROM visits v
@@ -292,6 +301,11 @@ final class ClinicalService
             'is_fast_track' => (bool) $r['is_fast_track'],
             'emergency_reason' => Crypto::decrypt($r['emergency_reason_enc'], 'visits.emergency_reason'),
             'patient_age_years' => (int) $r['patient_age_years'],
+            // Re-admitted by Reception: the earlier record of this stage was reopened to continue in.
+            'readmitted' => (int) $r['readmit_count'] === 0 ? null : [
+                'at' => Format::utc($r['readmitted_at']), 'count' => (int) $r['readmit_count'],
+                'reason' => Crypto::decrypt($r['readmit_reason_enc'], 'visits.readmit_reason'),
+            ],
             'attending' => $r['attending_user_id'] === null ? null : [
                 'id' => (int) $r['attending_user_id'], 'name' => $r['attending_name'], 'since' => Format::utc($r['attending_since']),
             ],

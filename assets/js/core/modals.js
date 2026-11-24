@@ -23,7 +23,8 @@ function toggleModalMaximize(modalId, btnEl){
   }
 }
 document.querySelectorAll('.modal-overlay').forEach(o=>{
-  o.addEventListener('click', e=>{ if(e.target===o) o.classList.remove('open'); });
+  // A form that must not be lost to a stray click (data-keep-open) closes only through its own buttons.
+  o.addEventListener('click', e=>{ if(e.target===o && !o.hasAttribute('data-keep-open')) o.classList.remove('open'); });
 });
 document.querySelectorAll('.inv-modal-overlay').forEach(o=>{
   o.addEventListener('click', e=>{ if(e.target===o) o.classList.remove('open'); });
@@ -34,13 +35,14 @@ document.querySelectorAll('.opt-modal-overlay').forEach(o=>{
 document.querySelectorAll('.modal-overlay').forEach(o=>{
   if (!o._storesBound) {
     o._storesBound = true;
-    o.addEventListener('click', e=>{ if(e.target===o) o.classList.remove('open'); });
+    o.addEventListener('click', e=>{ if(e.target===o && !o.hasAttribute('data-keep-open')) o.classList.remove('open'); });
   }
 });
 
 document.addEventListener('click', e => {
   const overlay = e.target;
-  if (overlay instanceof HTMLElement && overlay.matches('.modal-overlay.open, .inv-modal-overlay.open, .opt-modal-overlay.open')) {
+  if (overlay instanceof HTMLElement && overlay.matches('.modal-overlay.open, .inv-modal-overlay.open, .opt-modal-overlay.open')
+      && !overlay.hasAttribute('data-keep-open')) {
     overlay.classList.remove('open');
   }
 });

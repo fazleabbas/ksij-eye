@@ -39,6 +39,8 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `walkin-refund-browser.mjs` | New Refund on screen: "Walk-in counter sale?" finds the paid bill by EXT or receipt number, Change clears it, the request is saved for the walk-in |
 | `discount-documents.mjs` | A document attached to one discount request is on file for the patient: listed for the next request (cashier, optical, diagnostics "no charge") and shown to the approver with it; scoped to that patient; refused to users who neither request nor approve discounts |
 | `discount-documents-browser.mjs` | The same on screen: the on-file list in the optical, diagnostics and cashier discount windows, and "Already on File" in the approver's view |
+| `visit-discharge.mjs` | A visit is discharged automatically once the day's services are done (doctor, a test booked for today, medicines handed over), waits as "Awaiting Other Services" until then; Reception ends a visit by hand with a reason, or re-admits it (same visit, no new fee, the stage's record reopens as a draft); the limits and permissions |
+| `visit-discharge-browser.mjs` | The registration form keeps what was typed through a stray click, closing and changing screens (Start over clears it; nothing stored in the browser); End Visit and Re-admit from the visit window; the doctor's banner shows the re-admission |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

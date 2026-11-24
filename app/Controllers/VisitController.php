@@ -37,10 +37,11 @@ final class VisitController
        LEFT JOIN bills b ON b.id = (SELECT MAX(b2.id) FROM bills b2 WHERE b2.visit_id = v.id)';
 
     private const STATUSES = ['pending_payment', 'waiting_triage', 'waiting_doctor', 'waiting_investigation', 'waiting_optometry',
-        'waiting_ophthalmology', 'in_progress', 'completed', 'cancelled'];
+        'waiting_ophthalmology', 'in_progress', 'awaiting_services', 'completed', 'cancelled'];
 
     public function index(Request $request): array
     {
+        VisitService::settleWaiting();
         $where = [];
         $params = [];
         foreach (['date_from' => '>=', 'date_to' => '<='] as $key => $operator) {
@@ -239,8 +240,12 @@ final class VisitController
         $visit = $this->find($params['id']);
         $extra = Database::one(
             'SELECT v.investigation_eye, v.investigation_reason_enc, v.emergency_reason_enc, v.exemption_reason, v.cancel_reason_enc, v.cancelled_at,
-                    TRIM(CONCAT_WS(" ", d.first_name, d.last_name)) AS referring_doctor
-               FROM visits v LEFT JOIN users d ON d.id = v.referring_doctor_id WHERE v.id = :id',
+                    v.completed_at, v.end_reason_enc, v.readmit_count, v.readmitted_at, v.readmit_reason_enc,
+                    TRIM(CONCAT_WS(" ", d.first_name, d.last_name)) AS referring_doctor,
+                    TRIM(CONCAT_WS(" ", eu.first_name, eu.last_name)) AS ended_by,
+                    TRIM(CONCAT_WS(" ", ru.first_name, ru.last_name)) AS readmitted_by
+               FROM visits v LEFT JOIN users d ON d.id = v.referring_doctor_id
+               LEFT JOIN users eu ON eu.id = v.ended_by LEFT JOIN users ru ON ru.id = v.readmitted_by WHERE v.id = :id',
             ['id' => $params['id']]
         );
         $history = Database::all(
@@ -258,6 +263,19 @@ final class VisitController
                 'exemption_reason' => $extra['exemption_reason'],
                 'cancel_reason' => Crypto::decrypt($extra['cancel_reason_enc'], 'visits.cancel_reason'),
                 'cancelled_at' => Format::utc($extra['cancelled_at']),
+                'discharged_at' => $visit['status'] === 'completed' ? Format::utc($extra['completed_at']) : null,
+                'ended_by' => $extra['ended_by'] ?: null,
+                'end_reason' => Crypto::decrypt($extra['end_reason_enc'], 'visits.end_reason'),
+                'readmit_count' => (int) $extra['readmit_count'],
+                'readmitted_at' => Format::utc($extra['readmitted_at']),
+                'readmitted_by' => $extra['readmitted_by'] ?: null,
+                'readmit_reason' => Crypto::decrypt($extra['readmit_reason_enc'], 'visits.readmit_reason'),
+                // What is still to be done today, for Reception to see before ending the visit.
+                'outstanding' => in_array($visit['status'], ['completed', 'cancelled'], true) ? [] : VisitService::outstanding($visit['id']),
+                'can_end' => in_array($visit['status'], VisitService::ENDABLE_STATUSES, true),
+                'can_readmit' => in_array($visit['status'], ['completed', 'awaiting_services'], true)
+                    && $visit['visit_date'] >= (new \DateTimeImmutable(Format::localToday()))->modify('-' . VisitService::readmitDays() . ' days')->format('Y-m-d'),
+                'readmit_days' => VisitService::readmitDays(),
             ],
             'history' => array_map(static fn (array $h) => [
                 'from' => $h['from_status'], 'to' => $h['to_status'], 'at' => Format::utc($h['changed_at']),
@@ -285,6 +303,37 @@ final class VisitController
         });
         Audit::log('visits', 'visit.cancelled', "Cancelled visit $visitNo", 'visit', $visitNo);
         return ['visit' => $this->find($params['id'])];
+    }
+
+    /** Reception discharges an open visit by hand, with a reason (e.g. the patient left). */
+    public function end(Request $request, array $params): array
+    {
+        $ctx = Auth::require();
+        $v = Validator::make($request->all())->string('reason', true, 500, 3)->validate();
+        [$visitNo, $outstanding] = Database::transaction(function () use ($params, $v, $ctx): array {
+            $outstanding = VisitService::end($params['id'], $v['reason'], $ctx->userId);
+            return [(string) Database::value('SELECT visit_no FROM visits WHERE id = :id', ['id' => $params['id']]), $outstanding];
+        });
+        Audit::log('visits', 'visit.ended', "Ended (discharged) visit $visitNo" . ($outstanding ? ' with ' . count($outstanding) . ' service(s) outstanding' : ''),
+            'visit', $visitNo, $outstanding ? ['outstanding' => array_column($outstanding, 'kind')] : null);
+        return ['visit' => $this->find($params['id'])];
+    }
+
+    /** Reception re-admits a discharged visit to Triage, Optometry or the Doctor; that stage's record reopens. */
+    public function readmit(Request $request, array $params): array
+    {
+        $ctx = Auth::require();
+        $v = Validator::make($request->all())
+            ->enum('stage', array_keys(VisitService::READMIT_STAGES))
+            ->string('reason', true, 500, 3)
+            ->validate();
+        [$visitNo, $reopened] = Database::transaction(function () use ($params, $v, $ctx): array {
+            $reopened = VisitService::readmit($params['id'], $v['stage'], $v['reason'], $ctx->userId);
+            return [(string) Database::value('SELECT visit_no FROM visits WHERE id = :id', ['id' => $params['id']]), $reopened];
+        });
+        Audit::log('visits', 'visit.readmitted', "Re-admitted visit $visitNo to " . VisitService::READMIT_STAGES[$v['stage']]['label']
+            . ($reopened ? ' (record reopened)' : ''), 'visit', $visitNo);
+        return ['visit' => $this->find($params['id']), 'reopened' => $reopened];
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────

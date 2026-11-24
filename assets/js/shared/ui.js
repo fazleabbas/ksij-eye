@@ -7,7 +7,7 @@ const UI_LABELS = {
   visitStatus: {
     pending_payment: 'Pending Payment', waiting_triage: 'Waiting For Triage', waiting_doctor: 'Waiting For Doctor',
     waiting_investigation: 'Waiting For Investigation', waiting_optometry: 'Waiting For Optometry',
-    waiting_ophthalmology: 'Waiting For Ophthalmology', in_progress: 'In Progress', completed: 'Complete', cancelled: 'Cancelled',
+    waiting_ophthalmology: 'Waiting For Ophthalmology', in_progress: 'In Progress', awaiting_services: 'Awaiting Other Services', completed: 'Discharged', cancelled: 'Cancelled',
   },
   visitType: { consultation: 'Consultation', follow_up: 'Follow-Up' },
   subType: { normal: 'Normal', fast_track: 'Fast Track', doctor_follow_up: 'Doctor Follow-Up', surgery_follow_up: 'Surgery Follow-Up' },
@@ -73,7 +73,7 @@ const UI_BADGES = {
   visitStatus: {
     pending_payment: 'badge-pending', waiting_triage: 'badge-waiting-triage', waiting_doctor: 'badge-waiting-doctor',
     waiting_investigation: 'badge-waiting-inv', waiting_optometry: 'badge-waiting-doctor', waiting_ophthalmology: 'badge-waiting-doctor',
-    in_progress: 'badge-in-progress', completed: 'badge-complete', cancelled: 'badge-cancelled',
+    in_progress: 'badge-in-progress', awaiting_services: 'badge-waiting-inv', completed: 'badge-complete', cancelled: 'badge-cancelled',
   },
   billStatus: {
     pending: 'badge-pending', discount_requested: 'badge-discount-req', cancellation_requested: 'badge-cancel-req', paid: 'badge-paid',

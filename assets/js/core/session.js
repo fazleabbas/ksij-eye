@@ -91,6 +91,7 @@ KSI.session = (() => {
     hideWarning();
     try { await KSI.post('auth/logout', {}, { trackActivity: false }); } catch { /* going to sign-in anyway */ }
     if (channel) channel.postMessage({ type: 'signed-out', expired });
+    window.KSI_LEAVING = true; // no "unsaved changes" prompt when signing out
     window.location.replace(KSI.boot.basePath + (expired ? '?expired=1' : '?signed_out=1'));
   }
 
@@ -103,6 +104,7 @@ KSI.session = (() => {
         if (warningOpen && secondsLeft() > config.warning_seconds) hideWarning();
       } else if (message.type === 'signed-out' && !ended) {
         ended = true;
+        window.KSI_LEAVING = true;
         window.location.replace(KSI.boot.basePath + (message.expired ? '?expired=1' : '?signed_out=1'));
       }
     });
