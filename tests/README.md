@@ -41,6 +41,8 @@ and the web server's whitelist keeps this whole folder unreachable from a browse
 | `discount-documents-browser.mjs` | The same on screen: the on-file list in the optical, diagnostics and cashier discount windows, and "Already on File" in the approver's view |
 | `visit-discharge.mjs` | A visit is discharged automatically once the day's services are done (doctor, a test booked for today, medicines handed over), waits as "Awaiting Other Services" until then; Reception ends a visit by hand with a reason, or re-admits it (same visit, no new fee, the stage's record reopens as a draft); the limits and permissions |
 | `visit-discharge-browser.mjs` | The registration form keeps what was typed through a stray click, closing and changing screens (Start over clears it; nothing stored in the browser); End Visit and Re-admit from the visit window; the doctor's banner shows the re-admission |
+| `clinical-transfer.mjs` | To and fro between the doctor and Optometry: the optometrist refers back (the consultation reopens, its referral cleared), repeatedly; the doctor's queue lists patients with Optometry under their own filter and the doctor calls one over (one being seen there only with take-over; the optometry draft is kept) |
+| `clinical-transfer-browser.mjs` | The same on screen: the unlocked Ophthalmology box at Optometry, the At Optometry list, Call to Doctor, "Back from Optometry" |
 | `smoke-modules.mjs` | Opens every screen and fails on any script error |
 
 The earlier per-phase suites (diagnostics, optical, pharmacy, theatre, stores,

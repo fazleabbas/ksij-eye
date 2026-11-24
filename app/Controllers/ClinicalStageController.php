@@ -59,15 +59,15 @@ abstract class ClinicalStageController
             'from' => $request->query('from'), 'to' => $request->query('to'), 'search' => $request->query('search'),
         ], $ctx);
         $filter = $request->query('filter', 'all');
+        // Patients with Optometry (doctor's queue only) are listed under their own filter.
         $keep = match ($filter) {
-            'emergency' => static fn (array $i) => $i['is_emergency'],
-            'draft' => static fn (array $i) => $i['has_draft'],
-            'mine' => static fn (array $i) => $i['is_mine'],
-            default => null,
+            'optometry' => static fn (array $i) => !empty($i['at_optometry']),
+            'emergency' => static fn (array $i) => empty($i['at_optometry']) && $i['is_emergency'],
+            'draft' => static fn (array $i) => empty($i['at_optometry']) && $i['has_draft'],
+            'mine' => static fn (array $i) => empty($i['at_optometry']) && $i['is_mine'],
+            default => static fn (array $i) => empty($i['at_optometry']),
         };
-        if ($keep !== null) {
-            $data['queue'] = array_values(array_filter($data['queue'], $keep));
-        }
+        $data['queue'] = array_values(array_filter($data['queue'], $keep));
         return $data;
     }
 

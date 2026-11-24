@@ -52,6 +52,8 @@ run "discount documents api" node discount-documents.mjs
 run "discount documents browser" node discount-documents-browser.mjs
 run "visit discharge api"  node visit-discharge.mjs
 run "visit discharge browser" node visit-discharge-browser.mjs
+run "clinical transfer api" node clinical-transfer.mjs
+run "clinical transfer browser" node clinical-transfer-browser.mjs
 run "all screens"         node smoke-modules.mjs
 
 if [ -n "$FAILED" ]; then printf "\nSuites that failed or crashed:%b\n" "$FAILED"; exit 1; fi

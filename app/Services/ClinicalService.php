@@ -41,14 +41,21 @@ final class ClinicalService
 
     // ─── Queues ──────────────────────────────────────────────────────────
 
-    /** Patients waiting for, or being seen at, a stage: emergencies first, then fast track, then arrival. */
+    /**
+     * Patients waiting for, or being seen at, a stage: emergencies first, then fast track, then arrival.
+     * The doctor's queue also carries the patients who are with Optometry (at_optometry), so the
+     * doctor can see them and call them over without waiting for a referral back.
+     */
     public static function queue(string $stage, array $filters, AuthContext $ctx): array
     {
         $def = self::STAGES[$stage];
-        [$waitingIn, $params] = Database::in('w', $def['waiting']);
-        [$enteredIn, $enteredParams] = Database::in('e', $def['waiting']);
+        $withOptometry = $stage === 'ophthalmology';
+        $entered = $withOptometry ? [...$def['waiting'], 'waiting_optometry'] : $def['waiting'];
+        [$waitingIn, $params] = Database::in('w', $entered);
+        [$enteredIn, $enteredParams] = Database::in('e', $entered);
         $params += $enteredParams + ['stage' => $stage];
-        $where = ["(v.status IN ($waitingIn) OR (v.status = 'in_progress' AND v.clinical_stage = :stage))"];
+        $where = ["(v.status IN ($waitingIn) OR (v.status = 'in_progress' AND v.clinical_stage = :stage)"
+            . ($withOptometry ? " OR (v.status = 'in_progress' AND v.clinical_stage = 'optometry')" : '') . ')'];
         foreach (['from' => '>=', 'to' => '<='] as $key => $operator) {
             if (($filters[$key] ?? '') !== '') {
                 $where[] = "v.visit_date $operator :$key";
@@ -61,7 +68,7 @@ final class ClinicalService
         }
         $table = $def['table'];
         $rows = Database::all(
-            "SELECT v.id, v.visit_no, v.visit_date, v.visit_type, v.sub_type, v.status, v.room, v.is_emergency, v.is_fast_track,
+            "SELECT v.id, v.visit_no, v.visit_date, v.visit_type, v.sub_type, v.status, v.clinical_stage, v.room, v.is_emergency, v.is_fast_track,
                     v.attending_user_id, v.attending_since,
                     p.id AS patient_id, p.reg_no, p.first_name_enc, p.middle_name_enc, p.last_name_enc, p.gender, p.date_of_birth_enc,
                     TRIM(CONCAT_WS(' ', au.first_name, au.last_name)) AS attending_name,
@@ -80,7 +87,7 @@ final class ClinicalService
             $params
         );
 
-        $items = array_map(static function (array $r) use ($stage, $ctx): array {
+        $items = array_map(static function (array $r) use ($stage, $ctx, $withOptometry): array {
             $source = 'Reception';
             if ($stage === 'optometry' && (int) $r['doctor_referred'] === 1) {
                 $source = 'Doctor';
@@ -106,18 +113,21 @@ final class ClinicalService
                 'is_mine' => $r['attending_user_id'] !== null && (int) $r['attending_user_id'] === $ctx->userId,
                 'has_draft' => $r['record_status'] === 'draft',
                 'source' => $source,
+                // In the doctor's queue: with Optometry now (waiting there or being seen).
+                'at_optometry' => $withOptometry && ($r['status'] === 'waiting_optometry' || ($r['status'] === 'in_progress' && $r['clinical_stage'] === 'optometry')),
                 'patient' => PatientService::brief($r),
             ];
         }, $rows);
 
+        $here = array_values(array_filter($items, static fn (array $i) => !$i['at_optometry']));
         return [
             'queue' => $items,
             'counts' => [
-                'total' => count($items),
-                'emergency' => count(array_filter($items, static fn (array $i) => $i['is_emergency'])),
-                'drafts' => count(array_filter($items, static fn (array $i) => $i['has_draft'])),
-                'mine' => count(array_filter($items, static fn (array $i) => $i['is_mine'])),
-            ],
+                'total' => count($here),
+                'emergency' => count(array_filter($here, static fn (array $i) => $i['is_emergency'])),
+                'drafts' => count(array_filter($here, static fn (array $i) => $i['has_draft'])),
+                'mine' => count(array_filter($here, static fn (array $i) => $i['is_mine'])),
+            ] + ($withOptometry ? ['at_optometry' => count($items) - count($here)] : []),
         ];
     }
 
@@ -147,6 +157,27 @@ final class ClinicalService
             );
             VisitService::recordStatus($visitId, $visit['status'], 'in_progress', $ctx->userId, "{$def['label']} started");
             return null;
+        }
+
+        // The doctor calls a patient over from Optometry, without waiting for a referral back.
+        // One being seen there now is taken only on purpose (take over); the optometry draft is kept.
+        $atOptometry = $visit['status'] === 'waiting_optometry' || ($visit['status'] === 'in_progress' && $visit['clinical_stage'] === 'optometry');
+        if ($stage === 'ophthalmology' && $atOptometry) {
+            $optometrist = $visit['status'] === 'in_progress' && $visit['attending_user_id'] !== null ? (int) $visit['attending_user_id'] : null;
+            if ($optometrist !== null && !$takeOver) {
+                throw HttpException::conflict('attended_by_other', self::userName($optometrist) . ' is seeing this patient at Optometry.');
+            }
+            Database::execute(
+                "UPDATE visits SET status = 'in_progress', clinical_stage = 'ophthalmology', attending_user_id = :u, attending_since = UTC_TIMESTAMP(3),
+                        updated_at = UTC_TIMESTAMP(3), updated_by = :by, row_version = row_version + 1
+                  WHERE id = :id",
+                ['u' => $ctx->userId, 'by' => $ctx->userId, 'id' => $visitId]
+            );
+            $reopened = \App\Controllers\OphthalmologyController::reopenForOptometry($visitId, $ctx->userId);
+            VisitService::recordStatus($visitId, $visit['status'], 'in_progress', $ctx->userId,
+                'Called to the doctor from Optometry' . ($optometrist !== null ? ' (taken from ' . self::userName($optometrist) . ')' : '')
+                . ($reopened ? ' — consultation reopened' : ''));
+            return $optometrist;
         }
 
         if ($visit['status'] === 'in_progress' && $visit['clinical_stage'] === $stage) {

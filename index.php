@@ -8,7 +8,7 @@
 declare(strict_types=1);
 
 define('KSI_APP', true);
-const KSI_ASSET_VERSION = '0.24.0';
+const KSI_ASSET_VERSION = '0.25.0';
 
 use App\Core\Auth;
 use App\Core\Http\Response;

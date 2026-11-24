@@ -85,14 +85,16 @@ equal('and the earlier remarks', ws.record.remarks, 'Squint review');
 check('the reopening is shown', !!ws.record.reopened_at && !!ws.record.reopened_by);
 check('the doctor\'s consultation is shown to the optometrist', ws.upstream.ophthalmology?.clinical_history === history);
 
+// The earlier referral to Ophthalmology was cleared on reopening: the optometrist decides afresh.
+check('the optometrist decides afresh whether to send the child back', ws.record.refer_ophthalmology === false);
 await post(`optometry/visits/${childVisit.id}/complete`, optometryDone({
-  refer_ophthalmology: true, refer_optical: true, refractions: { final: { sph_right: -2, sph_left: -1.5 } }, row_version: ws.record.row_version,
+  refer_ophthalmology: false, refer_optical: true, refractions: { final: { sph_right: -2, sph_left: -1.5 } }, row_version: ws.record.row_version,
 }));
 // The clinical part ends at Optometry; with spectacles to order, the visit waits for the Optical Room (UAT: discharge).
 equal('after the doctor\'s referral the clinical part ends at Optometry; the visit waits for the spectacles order', status(childVisit.id), 'awaiting_services');
 check('…and is not sent back to the doctor', !(await get('ophthalmology/queue')).queue.some(q => q.visit_id === childVisit.id));
 equal('the change to the refraction is kept', sql(`SELECT sph_right FROM optometry_refractions r JOIN optometry_assessments a ON a.id = r.assessment_id WHERE a.visit_id = ${childVisit.id} AND r.kind = 'final' AND r.set_no = 1`), '-2.00');
-equal('the earlier referral to Ophthalmology is kept as it was', sql(`SELECT refer_ophthalmology FROM optometry_assessments WHERE visit_id = ${childVisit.id}`), '1');
+equal('not sent back to the doctor this time', sql(`SELECT refer_ophthalmology FROM optometry_assessments WHERE visit_id = ${childVisit.id}`), '0');
 check('the change is in the audit log', sql(`SELECT COUNT(*) FROM audit_log WHERE module = 'optometry' AND action = 'record.completed' AND entity_id = '${childVisit.visit_no}' AND changes LIKE '%refractions%'`) !== '0');
 check('the spectacles now reach the Optical Room', (await get('optical/incoming')).referrals.some(r => r.visit_no === childVisit.visit_no));
 
@@ -106,7 +108,8 @@ equal('the doctor can send a patient to Optometry who has not been there', statu
 check('no optometry record yet, nothing to reopen', sql(`SELECT COUNT(*) FROM optometry_assessments WHERE visit_id = ${adultVisit.id}`) === '0');
 ws = await post(`optometry/visits/${adultVisit.id}/claim`);
 check('the optometrist starts a new record', ws.record === null && ws.mode === 'edit');
-await post(`optometry/visits/${adultVisit.id}/complete`, optometryDone({ refer_ophthalmology: true }));
+// Without a referral back (UAT: the optometrist may now send the patient back — see clinical-transfer.mjs).
+await post(`optometry/visits/${adultVisit.id}/complete`, optometryDone({ refer_ophthalmology: false }));
 equal('and the visit ends there', status(adultVisit.id), 'completed');
 equal('without a referral back to the doctor', sql(`SELECT refer_ophthalmology FROM optometry_assessments WHERE visit_id = ${adultVisit.id}`), '0');
 

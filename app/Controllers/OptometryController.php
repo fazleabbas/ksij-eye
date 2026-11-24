@@ -118,11 +118,8 @@ final class OptometryController extends ClinicalStageController
         $plain = ['va_right' => $d['va_right'], 'va_left' => $d['va_left'], 'iop_right' => $d['iop_right'], 'iop_left' => $d['iop_left']];
         if (!$correction) {
             $plain['refer_optical'] = $d['refer_optical'] ? 1 : 0;
-            // Sent back by the doctor: the consultation is over, so there is no referral to
-            // Ophthalmology to make, and the one recorded earlier in the visit is kept as it was.
-            if (!self::doctorReferred((int) $visit['id'])) {
-                $plain['refer_ophthalmology'] = $d['refer_ophthalmology'] ? 1 : 0;
-            }
+            // Also after the doctor sent the patient here: the optometrist may send them back.
+            $plain['refer_ophthalmology'] = $d['refer_ophthalmology'] ? 1 : 0;
         }
         $texts = array_intersect_key($d, self::TEXT_LIMITS);
         $columns = $plain;
@@ -212,11 +209,16 @@ final class OptometryController extends ClinicalStageController
             $parts[] = 'referred to the Optical Room';
         }
         $extra = $parts ? ' (' . implode(', ', $parts) . ')' : '';
-        if (self::doctorReferred((int) $visit['id'])) {
-            return ['completed', "Optometry complete after the doctor's referral$extra"];
+        // The patient may go to and fro between the doctor and Optometry as often as needed: a
+        // referral back reopens the doctor's completed consultation to continue in.
+        $fromDoctor = self::doctorReferred((int) $visit['id']);
+        if ($data['refer_ophthalmology']) {
+            $reopened = OphthalmologyController::reopenForOptometry((int) $visit['id'], $ctx->userId);
+            return ['waiting_ophthalmology', 'Optometry complete — ' . ($fromDoctor ? 'referred back to Ophthalmology' : 'referred to Ophthalmology')
+                . $extra . ($reopened ? ' (consultation reopened)' : '')];
         }
-        return $data['refer_ophthalmology']
-            ? ['waiting_ophthalmology', "Optometry complete — referred to Ophthalmology$extra"]
+        return $fromDoctor
+            ? ['completed', "Optometry complete after the doctor's referral$extra"]
             : ['completed', "Optometry complete$extra"];
     }
 
@@ -286,12 +288,14 @@ final class OptometryController extends ClinicalStageController
     /**
      * The doctor sends the patient back for spectacles: an optometry record already completed in
      * this visit becomes a draft again, for the optometrist to add or change the refraction and
-     * lenses. An issued prescription and a booked follow-up stay as they are.
+     * lenses. An issued prescription and a booked follow-up stay as they are. The earlier
+     * referral to Ophthalmology is cleared: the optometrist decides afresh whether to send the
+     * patient back to the doctor.
      */
     public static function reopenForDoctor(int $visitId, int $userId): bool
     {
         return Database::execute(
-            "UPDATE optometry_assessments SET status = 'draft', reopened_at = UTC_TIMESTAMP(3), reopened_by = :by,
+            "UPDATE optometry_assessments SET status = 'draft', refer_ophthalmology = 0, reopened_at = UTC_TIMESTAMP(3), reopened_by = :by,
                     updated_at = UTC_TIMESTAMP(3), updated_by = :by2, row_version = row_version + 1
               WHERE visit_id = :v AND status = 'completed'",
             ['by' => $userId, 'by2' => $userId, 'v' => $visitId]

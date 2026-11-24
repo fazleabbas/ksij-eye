@@ -53,7 +53,7 @@ const OPTO_FORM = {
     document.getElementById('op-upstream').innerHTML = (fromDoctor
       ? `<div class="alert alert-info" style="margin-bottom:10px"><div><strong>Referred by the doctor for spectacles.</strong>
           ${record?.reopened_at ? `This optometry record was reopened on ${KSI.fmtDateTime(record.reopened_at)} — add or change the refraction and lenses.` : ''}
-          The consultation is complete, so the visit ends at Optometry or the Optical Room.</div></div>`
+          Tick Ophthalmology below to send the patient back to the doctor; otherwise the visit ends at Optometry or the Optical Room.</div></div>`
         + clOphthalmologyReadout(fromDoctor)
       : '') + clTriageReadout(ws.upstream.triage);
     this.doctorReferral = !!fromDoctor;
@@ -118,13 +118,11 @@ const OPTO_FORM = {
     clMarkDirty('optometry');
   },
 
-  /** After the form mode is applied: a doctor's referral leaves no referral to Ophthalmology to make. */
+  /** After the form mode is applied: explains where the patient goes when the optometrist finishes. */
   lockDoctorReferral() {
-    const box = this.form().querySelector('[data-field="refer_ophthalmology"]');
     const note = document.getElementById('op-route-note');
-    if (this.doctorReferral) box.disabled = true;
     note.textContent = this.doctorReferral
-      ? 'Referred by the doctor: the consultation is complete, so the visit ends when you finish.'
+      ? 'Sent by the doctor. Tick Ophthalmology to send the patient back to the doctor (the consultation reopens); otherwise the visit ends when you finish.'
       : 'Without a referral to Ophthalmology the visit is complete when you finish.';
   },
 

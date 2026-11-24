@@ -81,7 +81,12 @@ const OPH_FORM = {
     this.renderOrders('procedures');
 
     OPH_DRAW.load(record?.diagrams, ws.mode !== 'read');
-    document.getElementById('oph-upstream').innerHTML = clTriageReadout(ws.upstream.triage) + clOptometryReadout(ws.upstream.optometry, 'Optometry referral');
+    // Back from Optometry (referred back, or called over): the earlier consultation was reopened.
+    const reopened = record?.reopened_at && record.status === 'draft'
+      ? `<div class="alert alert-info" style="margin-bottom:10px"><div><strong>Back from Optometry.</strong>
+          This consultation was reopened on ${KSI.fmtDateTime(record.reopened_at)}${record.reopened_by ? ` by ${KSI.esc(record.reopened_by)}` : ''} — continue it below.
+          Tick Optometry again if the patient should go back there.</div></div>` : '';
+    document.getElementById('oph-upstream').innerHTML = reopened + clTriageReadout(ws.upstream.triage) + clOptometryReadout(ws.upstream.optometry, 'Optometry referral');
     this.summary();
   },
 

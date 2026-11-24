@@ -6,6 +6,7 @@ namespace App\Controllers;
 use App\Core\AuthContext;
 use App\Core\Crypto;
 use App\Core\Database;
+use App\Core\Format;
 use App\Services\ClinicalCatalog;
 use App\Services\ClinicalInput;
 use App\Services\ClinicalOrders;
@@ -269,11 +270,28 @@ final class OphthalmologyController extends ClinicalStageController
             'surgery' => ClinicalOrders::surgery($id),
             'referral' => self::referral($r),
             'refer_optometry' => (bool) $r['refer_optometry'],
+            'reopened_at' => Format::utc($r['reopened_at']),
+            'reopened_by' => $r['reopened_by'] === null ? null : ClinicalService::userName((int) $r['reopened_by']),
         ];
         foreach (array_keys(self::TEXT_LIMITS) as $field) {
             $record[$field] = Crypto::decrypt($r["{$field}_enc"], "ophthalmology_consultations.$field");
         }
         return $record;
+    }
+
+    /**
+     * The patient comes back to the doctor from Optometry (referred back, or called by the
+     * doctor): a consultation already completed in this visit becomes a draft again to continue
+     * in. Its referral to Optometry is cleared — the doctor decides afresh. Issued orders stay.
+     */
+    public static function reopenForOptometry(int $visitId, int $userId): bool
+    {
+        return Database::execute(
+            "UPDATE ophthalmology_consultations SET status = 'draft', refer_optometry = 0, reopened_at = UTC_TIMESTAMP(3), reopened_by = :by,
+                    updated_at = UTC_TIMESTAMP(3), updated_by = :by2, row_version = row_version + 1
+              WHERE visit_id = :v AND status = 'completed'",
+            ['by' => $userId, 'by2' => $userId, 'v' => $visitId]
+        ) > 0;
     }
 
     public static function completedSummary(int $visitId): ?array

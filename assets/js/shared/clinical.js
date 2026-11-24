@@ -832,7 +832,10 @@ class ClinicalStage {
       if (this.state.view !== 'queue') return;
       this.state.queue = data.queue;
       const c = data.counts;
-      this.el('q-stats').innerHTML = [['all', 'Total', c.total], ['emergency', 'Emergency', c.emergency], ['draft', 'Drafts', c.drafts], ['mine', 'Mine', c.mine]]
+      const stats = [['all', 'Total', c.total], ['emergency', 'Emergency', c.emergency], ['draft', 'Drafts', c.drafts], ['mine', 'Mine', c.mine]];
+      // The doctor also sees the patients who are with Optometry, to call one over when needed.
+      if (c.at_optometry !== undefined) stats.push(['optometry', 'At Optometry', c.at_optometry]);
+      this.el('q-stats').innerHTML = stats
         .map(([key, label, n]) => `<div class="tq-stat${this.state.filter === key ? ' active' : ''}" title="${label}" onclick="${this.cfg.global}.setFilter('${key}')">
           <div class="tq-stat-num">${n}</div><div class="tq-stat-lbl">${label}</div></div>`).join('');
       list.innerHTML = data.queue.length
@@ -841,7 +844,8 @@ class ClinicalStage {
           // The box only searches this queue; anyone else is found in Patient History.
           ? `<div class="cl-queue-empty">Not in this queue.${KSI.canModule('patient-history')
             ? `<br><a href="#" onclick="clOpenPatientHistory(${KSI.esc(JSON.stringify(this.el('q-search').value.trim()))}); return false;">Look them up in Patient History</a>` : ''}</div>`
-          : `<div class="cl-queue-empty">${this.state.filter === 'all' ? 'No patients waiting.' : 'No patients match this filter.'}</div>`;
+          : `<div class="cl-queue-empty">${this.state.filter === 'all' ? 'No patients waiting.'
+            : this.state.filter === 'optometry' ? 'No patients with Optometry.' : 'No patients match this filter.'}</div>`;
     } catch (error) {
       if (!background) list.innerHTML = `<div class="cl-queue-empty">${KSI.esc(error.message)}</div>`;
     }
@@ -855,14 +859,17 @@ class ClinicalStage {
     const badge = item.is_emergency ? '<div class="tq-card-badge emergency">● Emergency</div>'
       : item.has_draft ? '<div class="tq-card-badge draft">● Draft saved</div>' : '';
     const attending = item.attending
-      ? `<div class="cl-attending${item.is_mine ? ' mine' : ''}">${item.is_mine ? 'You are seeing this patient' : `With ${KSI.esc(item.attending.name)}`}</div>` : '';
+      ? `<div class="cl-attending${item.is_mine ? ' mine' : ''}">${item.is_mine ? 'You are seeing this patient' : `With ${KSI.esc(item.attending.name)}`}${item.at_optometry ? ' at Optometry' : ''}</div>` : '';
+    const source = item.at_optometry
+      ? `<span class="oq-source at-optometry">${item.attending ? 'Being seen at Optometry' : 'Waiting at Optometry'}</span>`
+      : `<span class="oq-source ${KSI.esc(item.source.toLowerCase())}">From ${KSI.esc(item.source)}</span>`;
     return `<div class="${classes.join(' ')}" data-visit="${item.visit_id}" onclick="${this.cfg.global}.select(${item.visit_id})">
       ${badge}
       <div class="tq-card-name">${KSI.esc(item.patient.full_name)}</div>
       <div class="tq-card-reg">${KSI.esc(item.patient.reg_no)} · ${item.patient.age} yrs · ${KSI.esc(uiLabel('gender', item.patient.gender))}</div>
       <div class="cl-card-meta">
         <span class="tq-card-tag ${item.is_fast_track ? 'fast-track' : 'normal'}">${KSI.esc(item.is_fast_track ? 'Fast track' : uiLabel('subType', item.sub_type))}</span>
-        ${this.stage !== 'triage' ? `<span class="oq-source ${KSI.esc(item.source.toLowerCase())}">From ${KSI.esc(item.source)}</span>` : ''}
+        ${this.stage !== 'triage' ? source : ''}
         <span class="cl-wait" title="Waiting time">${clWaitText(item.queued_at)}</span>
       </div>
       ${attending}
@@ -899,7 +906,8 @@ class ClinicalStage {
     if (this.state.dirty && this.state.visitId && this.state.visitId !== visitId
       && !confirm('You have unsaved changes for the current patient. Discard them?')) return;
     const item = this.state.queue.find(q => q.visit_id === visitId);
-    const claim = !fromRecent && KSI.can(`${this.stage}.record`) && item && (!item.attending || item.is_mine);
+    // A patient with Optometry opens to read; the doctor calls them over on purpose (callOver).
+    const claim = !fromRecent && KSI.can(`${this.stage}.record`) && item && !item.at_optometry && (!item.attending || item.is_mine);
     try {
       const ws = claim ? await KSI.post(`${this.stage}/visits/${visitId}/claim`, {}) : await KSI.get(`${this.stage}/visits/${visitId}`);
       this.showWorkspace(ws);
@@ -937,6 +945,16 @@ class ClinicalStage {
     if (ws.mode === 'edit') {
       return `<div class="cl-mode edit"><span><strong>You are seeing this patient.</strong> Save a draft at any time and complete when finished.</span>
         <button type="button" class="btn btn-secondary btn-sm" onclick="${g}.release()">Return to queue</button></div>`;
+    }
+    // The patient is with Optometry: the doctor may call them over (also while still correcting the consultation).
+    const atOptometry = this.stage === 'ophthalmology'
+      && (v.status === 'waiting_optometry' || (v.status === 'in_progress' && v.clinical_stage === 'optometry'));
+    if (atOptometry) {
+      const seenBy = v.status === 'in_progress' && v.attending ? v.attending.name : null;
+      return `<div class="cl-mode read"><span><strong>This patient is with Optometry</strong>${seenBy ? ` — being seen by ${KSI.esc(seenBy)}` : ' — waiting there'}.
+        ${ws.mode === 'correct' ? `You can still correct your consultation until ${KSI.fmtDateTime(ws.correctable_until)}, ` : 'You can read the record, '}
+        ${KSI.can('ophthalmology.record') ? 'or call the patient to you now without waiting for a referral back' : ''}.</span>
+        ${KSI.can('ophthalmology.record') ? `<button type="button" class="btn btn-primary btn-sm" onclick="${g}.callOver()">Call to Doctor</button>` : ''}</div>`;
     }
     if (ws.mode === 'correct') {
       return `<div class="cl-mode correct"><span><strong>Completed.</strong> You can correct this record until ${KSI.fmtDateTime(ws.correctable_until)}; orders and routing can no longer change. After that, add an addendum.</span></div>`;
@@ -1020,6 +1038,23 @@ class ClinicalStage {
       this.loadQueue(true);
     } catch (error) {
       showToast('Cannot take over', error.message, 'error');
+    }
+  }
+
+  /** Doctor: take a patient from Optometry now. One being seen there is taken only after confirming. */
+  async callOver() {
+    const ws = this.state.ws;
+    if (!ws) return;
+    const v = ws.visit;
+    const seenBy = v.status === 'in_progress' && v.attending ? v.attending.name : null;
+    if (seenBy && !confirm(`${seenBy} is seeing this patient at Optometry. Call the patient to you anyway? The optometry draft is kept, but their unsaved changes will be lost.`)) return;
+    try {
+      this.showWorkspace(await KSI.post(`${this.stage}/visits/${v.id}/claim`, { take_over: !!seenBy }));
+      showToast('Patient called to the doctor', `${v.patient.full_name} · Visit ${v.visit_no}`, 'success');
+      this.loadQueue(true);
+    } catch (error) {
+      showToast('Cannot call the patient', error.message, 'error');
+      this.reload();
     }
   }
 
