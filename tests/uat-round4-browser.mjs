@@ -98,7 +98,8 @@ const opto = await evaluate(`({
 })`);
 check('the optometrist sees it is a doctor\'s referral', opto.note.includes('Referred by the doctor for spectacles'));
 check('with the doctor\'s clinical history', opto.history);
-check('Ophthalmology cannot be chosen again', opto.locked && opto.route.includes('Referred by the doctor'), opto.route);
+// UAT: the optometrist may send the patient back to the doctor (see clinical-transfer.mjs).
+check('Ophthalmology can be ticked to send the patient back', !opto.locked && opto.route.includes('send the patient back to the doctor'), opto.route);
 check('the Optical Room still can', opto.optical === false);
 await shot('optometry-doctor-referral', SHOTS);
 
